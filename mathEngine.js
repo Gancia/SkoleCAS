@@ -205,9 +205,21 @@ window.calculateInline = async function(actionType) {
                 } catch (ooxmlErr) {
                     console.error("❌ OOXML-indsættelse fejlede:", ooxmlErr);
                     console.error("   Fejlbesked:", ooxmlErr.message);
-                    // PRINT XML INTO DOCUMENT FOR DEBUGGING
+                    console.log("↩️ Bruger tekst-fallback efter OOXML-fejl");
+                    
                     let insertRange = context.document.getSelection();
-                    insertRange.insertText("FEJL I XML: " + ooxml, "Replace");
+                    const fallbackTxt = wasHighlighted ? textToParse + " " + getFallbackText() : " " + getFallbackText();
+                    
+                    if (wasHighlighted && textToParse) {
+                        let searchResults = insertRange.search(textToParse, {matchCase: true});
+                        searchResults.load("items");
+                        await context.sync();
+                        if (searchResults.items.length > 0) {
+                            insertRange = searchResults.items[0];
+                        }
+                    }
+                    
+                    insertRange.insertText(fallbackTxt, "Replace");
                     await context.sync();
                 }
             }
