@@ -292,6 +292,20 @@ function latexToOmmlViaXslt(latexStr) {
 
     const mathNode = mathDoc.documentElement;
 
+    // FJERNER ANNOTATIONS!
+    // KaTeX indsætter <annotation> med rå LaTeX (fx "\frac{1}{2}"). 
+    // mml2omml.xsl ignorerer tagget, men dens catch-all template kopierer selve teksten over.
+    // Resultatet er, at ren tekst ender ulovligt inde i OMML og får Word til at crashe fuldstændigt.
+    const annotations = mathDoc.querySelectorAll("annotation");
+    for (let i = 0; i < annotations.length; i++) {
+        annotations[i].parentNode.removeChild(annotations[i]);
+    }
+    const semantics = mathDoc.querySelectorAll("semantics");
+    for (let i = 0; i < semantics.length; i++) {
+        // Semantics-tagget alene er uskadeligt når annotation fjernes,
+        // men vi kan lige så godt lade det være, for XSLT's catch-all håndterer det.
+    }
+
     // 3. MathML → OMML via XSLT
     const ommlDoc = xsltProcessor.transformToDocument(mathNode);
     const serializer = new XMLSerializer();
