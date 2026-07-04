@@ -137,8 +137,8 @@ function latexFragmentToOmml(latex) {
                 const num = nextGroup(i + 1);
                 const den = nextGroup(i + 1 + num.consumed);
                 out += `<m:f><m:fPr><m:type m:val="bar"/></m:fPr>` +
-                       `<m:num><m:e>${latexFragmentToOmml(num.content)}</m:e></m:num>` +
-                       `<m:den><m:e>${latexFragmentToOmml(den.content)}</m:e></m:den></m:f>`;
+                       `<m:num>${latexFragmentToOmml(num.content)}</m:num>` +
+                       `<m:den>${latexFragmentToOmml(den.content)}</m:den></m:f>`;
                 i += 1 + num.consumed + den.consumed;
                 continue;
             }
@@ -202,7 +202,7 @@ function latexFragmentToOmml(latex) {
                 const sup = nextGroup(i + 1);
                 // Erstatter hele out med en sSup-node
                 out = `<m:sSup><m:sSupPr/><m:e>${base}</m:e>` +
-                      `<m:sup><m:e>${latexFragmentToOmml(sup.content)}</m:e></m:sup></m:sSup>`;
+                      `<m:sup>${latexFragmentToOmml(sup.content)}</m:sup></m:sSup>`;
                 i += 1 + sup.consumed;
                 continue;
             }
@@ -212,7 +212,7 @@ function latexFragmentToOmml(latex) {
                 const base = out;
                 const sub = nextGroup(i + 1);
                 out = `<m:sSub><m:sSubPr/><m:e>${base}</m:e>` +
-                      `<m:sub><m:e>${latexFragmentToOmml(sub.content)}</m:e></m:sub></m:sSub>`;
+                      `<m:sub>${latexFragmentToOmml(sub.content)}</m:sub></m:sSub>`;
                 i += 1 + sub.consumed;
                 continue;
             }
