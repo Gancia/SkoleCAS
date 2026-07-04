@@ -60,6 +60,7 @@ window.calculateInline = async function(actionType) {
             try {
                 // Prøv at lade nerdamer formatere det oprindelige udtryk (laver f.eks. 1/2 til en rigtig brøk)
                 try {
+                    // Brug nerdamer til at bygge en LaTeX streng, fx "\frac{1}{2}" i stedet for "1/2"
                     originalLatex = nerdamer(mathExpr).toTeX();
                 } catch(e) {
                     originalLatex = textToParse; // Fallback til rå tekst

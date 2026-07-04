@@ -344,12 +344,7 @@ function buildFlatOpc(ommlString) {
         xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
         <w:body>
           <w:p>
-            <m:oMathPara>
-              <m:oMathParaPr>
-                <m:jc m:val="centerGroup"/>
-              </m:oMathParaPr>
-              ${cleanOmml}
-            </m:oMathPara>
+            ${cleanOmml}
           </w:p>
         </w:body>
       </w:document>
