@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SkoleCAS — OOXML Debug</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+    <style>
+        :root {
+            --bg: #0f1117;
+            --panel: #1a1d2e;
+            --border: #2e3250;
+            --accent: #6c8aff;
+            --green: #4ade80;
+            --red: #f87171;
+            --yellow: #fbbf24;
+            --text: #e2e8f0;
+            --muted: #8892b0;
+            --mono: 'Fira Mono', 'Consolas', monospace;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', system-ui, sans-serif;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        h1 {
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: var(--accent);
+            margin-bottom: 0.4rem;
+        }
+        .subtitle { color: var(--muted); margin-bottom: 2rem; font-size: 0.9rem; }
+
+        .grid { display: grid; gap: 1.5rem; }
+
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+        }
+        .card h2 {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .badge {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            border-radius: 999px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+        }
+        .badge-pending { background: #2e3250; color: var(--muted); }
+        .badge-ok { background: #14532d; color: var(--green); }
+        .badge-fail { background: #450a0a; color: var(--red); }
+        .badge-warn { background: #3a2a00; color: var(--yellow); }
+
+        .step { margin-bottom: 1rem; }
+        .step-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+            margin-bottom: 0.4rem;
+        }
+        pre {
+            background: #0a0c14;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            font-family: var(--mono);
+            font-size: 0.78rem;
+            line-height: 1.6;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .ok { color: var(--green); }
+        .fail { color: var(--red); }
+        .warn { color: var(--yellow); }
+        .info { color: var(--accent); }
+
+        button {
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 0.6rem 1.4rem;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity .15s;
+        }
+        button:hover { opacity: 0.85; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .controls {
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+            margin-bottom: 1.5rem;
+            align-items: center;
+        }
+        input[type=text] {
+            flex: 1;
+            min-width: 260px;
+            background: #0a0c14;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            padding: 0.55rem 0.9rem;
+            font-family: var(--mono);
+            font-size: 0.9rem;
+        }
+        input[type=text]:focus { outline: 2px solid var(--accent); }
+
+        .status-row {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            margin-bottom: 1.5rem;
+        }
+        .status-item {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.6rem 1rem;
+            font-size: 0.82rem;
+        }
+        .status-item span { font-weight: 700; }
+    </style>
+</head>
+<body>
+
+<h1>🔬 SkoleCAS — OOXML Debug</h1>
+<p class="subtitle">Diagnostisk side — tester LaTeX → MathML → OMML → Flat OPC pipeline UDEN Word API</p>
+
+<div class="status-row">
+    <div class="status-item" id="statusKatex">KaTeX: <span class="badge badge-pending" id="badgeKatex">Afventer</span></div>
+    <div class="status-item" id="statusNerdamer">nerdamer: <span class="badge badge-pending" id="badgeNerdamer">Afventer</span></div>
+    <div class="status-item" id="statusXslt">XSLT mml2omml.xsl: <span class="badge badge-pending" id="badgeXslt">Afventer</span></div>
+</div>
+
+<div class="controls">
+    <input type="text" id="latexInput" value="\frac{1}{2}" placeholder="Skriv LaTeX her, fx \frac{1}{2}" />
+    <button id="runBtn" onclick="runAll()">Kør pipeline</button>
+    <button onclick="runPresets()">Kør alle presets</button>
+</div>
+
+<div class="grid" id="output"></div>
+
+<!-- Scripts -->
+<script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/nerdamer.core.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/Algebra.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/Calculus.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/Solve.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+<script>
+
+// ─────────────────────────────────────────────────────────────────
+//  Inline-kopi af ommlConverter-logikken (ingen Word API)
+// ─────────────────────────────────────────────────────────────────
+
+let xsltProcessor = null;
+let xsltError = null;
+
+async function loadXslt() {
+    setBadge('badgeXslt', 'Henter…', 'pending');
+    try {
+        const r = await fetch("mml2omml.xsl");
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const text = await r.text();
+        const parser = new DOMParser();
+        const xsl = parser.parseFromString(text, "application/xml");
+        const err = xsl.querySelector("parsererror");
+        if (err) throw new Error("XSL parse-fejl: " + err.textContent.substring(0, 100));
+        xsltProcessor = new XSLTProcessor();
+        xsltProcessor.importStylesheet(xsl);
+        setBadge('badgeXslt', '✅ Loaded', 'ok');
+    } catch(e) {
+        xsltError = e.message;
+        setBadge('badgeXslt', '❌ Fejl', 'fail');
+        log('XSLT-fejl: ' + e.message, 'fail');
+    }
+}
+
+function setBadge(id, text, state) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text;
+    el.className = 'badge badge-' + (state === 'ok' ? 'ok' : state === 'fail' ? 'fail' : state === 'warn' ? 'warn' : 'pending');
+}
+
+function checkDeps() {
+    if (typeof window.katex !== 'undefined') {
+        setBadge('badgeKatex', '✅ ' + (window.katex.version || 'loaded'), 'ok');
+    } else {
+        setBadge('badgeKatex', '❌ Ikke loaded', 'fail');
+    }
+    if (typeof window.nerdamer !== 'undefined') {
+        setBadge('badgeNerdamer', '✅ loaded', 'ok');
+    } else {
+        setBadge('badgeNerdamer', '❌ Ikke loaded', 'fail');
+    }
+}
+
+// ─── XSLT pipeline ───
+function latexToOmmlViaXslt(latexStr) {
+    if (!xsltProcessor) throw new Error("XSLT ikke loaded. Fejl: " + (xsltError || 'ukendt'));
+    if (!window.katex) throw new Error("KaTeX ikke loaded");
+
+    const sanitized = sanitizeLatex(latexStr);
+    const mathmlString = window.katex.renderToString(sanitized, {
+        output: 'mathml', throwOnError: true, displayMode: false
+    });
+
+    const mathMatch = mathmlString.match(/<math[\s\S]*<\/math>/);
+    if (!mathMatch) throw new Error("KaTeX returnerede ingen <math>-element");
+
+    let mathXml = mathMatch[0];
+    if (!mathXml.includes('xmlns=')) {
+        mathXml = mathXml.replace('<math', '<math xmlns="http://www.w3.org/1998/Math/MathML"');
+    }
+
+    const xmlParser = new DOMParser();
+    const mathDoc = xmlParser.parseFromString(mathXml, "text/xml");
+    const parseErr = mathDoc.querySelector("parsererror");
+    if (parseErr) throw new Error("MathML XML-parse fejl: " + parseErr.textContent.substring(0, 120));
+
+    const ommlDoc = xsltProcessor.transformToDocument(mathDoc.documentElement);
+    const serializer = new XMLSerializer();
+    let omml = serializer.serializeToString(ommlDoc);
+
+    omml = omml
+        .replace(/<\?xml[^?]*\?>\s*/g, '')
+        .replace(/ xmlns:m="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/math"/g, '')
+        .replace(/ xmlns:mml="[^"]*"/g, '')
+        .replace(/ xmlns="http:\/\/www\.w3\.org\/1998\/Math\/MathML"/g, '')
+        .trim();
+
+    return omml;
+}
+
+// ─── JS-fallback ───
+function escOmml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function tokenizeLatex(latex) {
+    const tokens = [];
+    let i = 0;
+    while (i < latex.length) {
+        if (latex[i] === '\\') {
+            let j = i + 1;
+            if (j < latex.length && /[a-zA-Z]/.test(latex[j])) {
+                while (j < latex.length && /[a-zA-Z]/.test(latex[j])) j++;
+                tokens.push({ type: 'cmd', value: latex.slice(i, j) });
+            } else {
+                tokens.push({ type: 'cmd', value: latex.slice(i, i + 2) });
+                j = i + 2;
+            }
+            i = j;
+        } else if (latex[i] === '{') {
+            let depth = 1, j = i + 1;
+            while (j < latex.length && depth > 0) {
+                if (latex[j] === '{') depth++;
+                else if (latex[j] === '}') depth--;
+                j++;
+            }
+            tokens.push({ type: 'group', value: latex.slice(i + 1, j - 1) });
+            i = j;
+        } else if (latex[i] === ' ') {
+            i++;
+        } else {
+            tokens.push({ type: 'char', value: latex[i] });
+            i++;
+        }
+    }
+    return tokens;
+}
+
+function latexFragmentToOmml(latex) {
+    latex = latex.trim();
+    if (!latex) return '';
+    const tokens = tokenizeLatex(latex);
+    let out = '';
+    let i = 0;
+
+    function nextGroup(idx) {
+        if (idx < tokens.length && tokens[idx].type === 'group') return { content: tokens[idx].value, consumed: 1 };
+        if (idx < tokens.length && tokens[idx].type === 'char') return { content: tokens[idx].value, consumed: 1 };
+        return { content: '', consumed: 0 };
+    }
+
+    while (i < tokens.length) {
+        const tok = tokens[i];
+        if (tok.type === 'cmd') {
+            if (tok.value === '\\frac') {
+                const num = nextGroup(i+1), den = nextGroup(i+1+num.consumed);
+                out += `<m:f><m:fPr><m:type m:val="bar"/></m:fPr><m:num><m:r><m:t>${escOmml(num.content)}</m:t></m:r></m:num><m:den><m:r><m:t>${escOmml(den.content)}</m:t></m:r></m:den></m:f>`;
+                i += 1 + num.consumed + den.consumed; continue;
+            }
+            if (tok.value === '\\sqrt') {
+                const arg = nextGroup(i+1);
+                out += `<m:rad><m:radPr><m:degHide m:val="1"/></m:radPr><m:deg/><m:e><m:r><m:t>${escOmml(arg.content)}</m:t></m:r></m:e></m:rad>`;
+                i += 1 + arg.consumed; continue;
+            }
+            const SYM = {'\\approx':'≈','\\Rightarrow':'⇒','\\rightarrow':'→','\\int':'∫','\\pi':'π','\\cdot':'·','\\lor':'∨','\\leq':'≤','\\geq':'≥','\\neq':'≠','\\times':'×','\\pm':'±','\\alpha':'α','\\beta':'β','\\theta':'θ','\\lambda':'λ','\\sigma':'σ','\\infty':'∞'};
+            if (SYM[tok.value]) { out += `<m:r><m:t>${SYM[tok.value]}</m:t></m:r>`; i++; continue; }
+            const FUNCS = ['\\sin','\\cos','\\tan','\\cot','\\ln','\\log','\\exp','\\arcsin','\\arccos','\\arctan'];
+            if (FUNCS.includes(tok.value)) {
+                const nm = tok.value.slice(1);
+                out += `<m:func><m:funcPr/><m:fName><m:r><m:rPr><m:sty m:val="p"/></m:rPr><m:t>${nm}</m:t></m:r></m:fName><m:e/></m:func>`;
+                i++; continue;
+            }
+            i++; continue;
+        }
+        if (tok.type === 'group') { out += latexFragmentToOmml(tok.value); i++; continue; }
+        if (tok.type === 'char') {
+            const c = tok.value;
+            if (c === '^') { const sup = nextGroup(i+1); out = `<m:sSup><m:sSupPr/><m:e>${out}</m:e><m:sup><m:r><m:t>${escOmml(sup.content)}</m:t></m:r></m:sup></m:sSup>`; i += 1 + sup.consumed; continue; }
+            if (c === '_') { const sub = nextGroup(i+1); out = `<m:sSub><m:sSubPr/><m:e>${out}</m:e><m:sub><m:r><m:t>${escOmml(sub.content)}</m:t></m:r></m:sub></m:sSub>`; i += 1 + sub.consumed; continue; }
+            out += `<m:r><m:t>${escOmml(c)}</m:t></m:r>`; i++; continue;
+        }
+        i++;
+    }
+    return out;
+}
+
+function latexToOmmlViaJs(latex) {
+    const sanitized = sanitizeLatex(latex);
+    const inner = latexFragmentToOmml(sanitized);
+    return `<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">${inner}</m:oMath>`;
+}
+
+function sanitizeLatex(latex) {
+    return latex
+        .replace(/\\dfrac/g, '\\frac')
+        .replace(/\\operatorname\{(sin|cos|tan|log|ln|exp|abs|sqrt|cot|sec|csc)\}/g, '\\$1')
+        .replace(/\\left\(([^()\\]+)\\right\)/g, '($1)')
+        .replace(/  +/g, ' ')
+        .trim();
+}
+
+function buildFlatOpc(omml) {
+    const clean = omml.replace(/ xmlns:m="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/math"/g, '');
+    return `<?xml version="1.0" standalone="yes"?>
+<pkg:package xmlns:pkg="http://schemas.microsoft.com/office/2006/xmlPackage">
+  <pkg:part pkg:name="/word/document.xml"
+            pkg:contentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml">
+    <pkg:xmlData>
+      <w:document
+        xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"
+        xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+        <w:body>
+          <w:p>
+            ${clean}
+          </w:p>
+          <w:sectPr/>
+        </w:body>
+      </w:document>
+    </pkg:xmlData>
+  </pkg:part>
+</pkg:package>`;
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  UI-hjælpere
+// ─────────────────────────────────────────────────────────────────
+let resultCount = 0;
+
+function card(title, badge, badgeState, content) {
+    resultCount++;
+    const id = 'card-' + resultCount;
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.id = id;
+    div.innerHTML = `<h2>${title} <span class="badge badge-${badgeState}">${badge}</span></h2>${content}`;
+    document.getElementById('output').appendChild(div);
+    return div;
+}
+
+function step(label, content, cls = '') {
+    return `<div class="step"><div class="step-label">${label}</div><pre class="${cls}">${escHtml(content)}</pre></div>`;
+}
+
+function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function sep() {
+    const hr = document.createElement('hr');
+    hr.style.cssText = 'border:none;border-top:1px solid #2e3250;margin:0';
+    document.getElementById('output').appendChild(hr);
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Pipeline-kørsler
+// ─────────────────────────────────────────────────────────────────
+function runPipeline(latex) {
+    const sanitized = sanitizeLatex(latex);
+    let html = '';
+    html += step('1. Input LaTeX', latex, 'info');
+    html += step('2. Sanitized LaTeX', sanitized, 'info');
+
+    // Step 3: KaTeX → MathML
+    let mathmlStr = '';
+    let mathmlOk = false;
+    if (window.katex) {
+        try {
+            mathmlStr = window.katex.renderToString(sanitized, { output: 'mathml', throwOnError: true });
+            mathmlOk = true;
+            html += step('3. KaTeX → MathML (rå HTML-output)', mathmlStr, 'ok');
+        } catch(e) {
+            html += step('3. KaTeX FEJLEDE', e.message, 'fail');
+        }
+    } else {
+        html += step('3. KaTeX', 'KaTeX ikke loaded!', 'fail');
+    }
+
+    // Step 4: Udtræk <math> og re-parse som XML
+    let mathXml = '';
+    let mathXmlOk = false;
+    if (mathmlOk) {
+        const m = mathmlStr.match(/<math[\s\S]*<\/math>/);
+        if (m) {
+            mathXml = m[0];
+            if (!mathXml.includes('xmlns=')) {
+                mathXml = mathXml.replace('<math', '<math xmlns="http://www.w3.org/1998/Math/MathML"');
+            }
+            html += step('4a. Udtrak <math>-streng (med namespace)', mathXml, 'ok');
+
+            // Test XML-parse
+            const xmlParser = new DOMParser();
+            const mathDoc = xmlParser.parseFromString(mathXml, "text/xml");
+            const xmlErr = mathDoc.querySelector("parsererror");
+            if (xmlErr) {
+                html += step('4b. XML-parse FEJLEDE', xmlErr.textContent, 'fail');
+            } else {
+                mathXmlOk = true;
+                html += step('4b. XML-parse', '✅ MathML parsede korrekt som XML. Root namespace: ' + mathDoc.documentElement.namespaceURI, 'ok');
+            }
+        } else {
+            html += step('4a. Udtræk <math>', '❌ Ingen <math>-element fundet i KaTeX output!', 'fail');
+        }
+    }
+
+    // Step 5: XSLT-transformation
+    let xsltOmml = '';
+    if (mathXmlOk && xsltProcessor) {
+        try {
+            const xmlParser = new DOMParser();
+            const mathDoc = xmlParser.parseFromString(mathXml, "text/xml");
+            const ommlDoc = xsltProcessor.transformToDocument(mathDoc.documentElement);
+            const serializer = new XMLSerializer();
+            let raw = serializer.serializeToString(ommlDoc);
+            html += step('5a. XSLT-output (rå)', raw, 'ok');
+            // Rens
+            xsltOmml = raw
+                .replace(/<\?xml[^?]*\?>\s*/g, '')
+                .replace(/ xmlns:m="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/math"/g, '')
+                .replace(/ xmlns:mml="[^"]*"/g, '')
+                .replace(/ xmlns="http:\/\/www\.w3\.org\/1998\/Math\/MathML"/g, '')
+                .trim();
+            html += step('5b. XSLT-output (renset)', xsltOmml, 'ok');
+        } catch(e) {
+            html += step('5. XSLT FEJLEDE', e.message, 'fail');
+        }
+    } else if (!xsltProcessor) {
+        html += step('5. XSLT', '⚠️ XSLT ikke loaded — spring over', 'warn');
+    }
+
+    // Step 6: JS-fallback OMML
+    let jsOmml = '';
+    try {
+        jsOmml = latexToOmmlViaJs(latex);
+        html += step('6. JS-fallback OMML (altid tilgængelig)', jsOmml, 'ok');
+    } catch(e) {
+        html += step('6. JS-fallback FEJLEDE', e.message, 'fail');
+    }
+
+    // Step 7: Flat OPC
+    const finalOmml = xsltOmml || jsOmml;
+    if (finalOmml) {
+        const flatOpc = buildFlatOpc(finalOmml);
+        html += step('7. Endelig Flat OPC OOXML (klar til insertOoxml)', flatOpc, 'ok');
+    }
+
+    // Nerdamer-test
+    try {
+        const nd = nerdamer(latex.replace(/\\/g, '')).toTeX();
+        html += step('Nerdamer .toTeX() af udtryk', nd, 'info');
+    } catch(e) {
+        html += step('Nerdamer', 'Fejl (forventet for ren LaTeX): ' + e.message, 'warn');
+    }
+
+    const allOk = mathmlOk && mathXmlOk && (xsltOmml || jsOmml);
+    card(`📐 ${latex}`, allOk ? '✅ OK' : '⚠️ Delvis', allOk ? 'ok' : 'warn', html);
+}
+
+function runAll() {
+    document.getElementById('output').innerHTML = '';
+    resultCount = 0;
+    const latex = document.getElementById('latexInput').value;
+    runPipeline(latex);
+}
+
+function runPresets() {
+    document.getElementById('output').innerHTML = '';
+    resultCount = 0;
+    const presets = [
+        '\\frac{1}{2}',
+        'x^{2}+1',
+        '\\sqrt{x}',
+        '\\sin(x)',
+        '\\frac{a+b}{c-d}',
+        '\\approx 0{,}5',
+        '2\\pi',
+        '\\frac{1}{2} + \\frac{3}{4}',
+    ];
+    presets.forEach((p, idx) => {
+        if (idx > 0) sep();
+        runPipeline(p);
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Init
+// ─────────────────────────────────────────────────────────────────
+window.addEventListener('load', async () => {
+    checkDeps();
+    await loadXslt();
+    checkDeps(); // KaTeX kan evt. have loaded i mellemtiden
+
+    // Auto-kør første preset
+    runAll();
+});
+
+</script>
+</body>
+</html>

@@ -1,0 +1,524 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+    /* Light Theme (Default) */
+    --bg-gradient-start: #f8fafc;
+    --bg-gradient-end: #f1f5f9;
+    --text-main: #0f172a;
+    --text-muted: #64748b;
+    --card-bg: #ffffff;
+    --card-border: #e2e8f0;
+    --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.03);
+    
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --primary-text: #ffffff;
+    
+    --secondary-bg: #ffffff;
+    --secondary-border: #cbd5e1;
+    --secondary-text: #334155;
+    --secondary-hover-bg: #f8fafc;
+    
+    --input-bg: #f8fafc;
+    --input-border: #cbd5e1;
+    --input-focus: #3b82f6;
+    
+    --tab-bg: #e2e8f0;
+    --tab-text: #64748b;
+    --tab-active-bg: #ffffff;
+    --tab-active-text: #2563eb;
+    
+    --instruction-bg: #eff6ff;
+    --instruction-border: #3b82f6;
+    --instruction-text: #1e3a8a;
+    
+    --error-text: #ef4444;
+}
+
+[data-theme="dark"] {
+    /* Dark Theme */
+    --bg-gradient-start: #0f172a;
+    --bg-gradient-end: #1e293b;
+    --text-main: #f8fafc;
+    --text-muted: #94a3b8;
+    --card-bg: #1e293b;
+    --card-border: #334155;
+    --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.2);
+    
+    --primary: #3b82f6;
+    --primary-hover: #60a5fa;
+    --primary-text: #ffffff;
+    
+    --secondary-bg: #1e293b;
+    --secondary-border: #475569;
+    --secondary-text: #e2e8f0;
+    --secondary-hover-bg: #334155;
+    
+    --input-bg: #0f172a;
+    --input-border: #475569;
+    --input-focus: #60a5fa;
+    
+    --tab-bg: #0f172a;
+    --tab-text: #94a3b8;
+    --tab-active-bg: #1e293b;
+    --tab-active-text: #60a5fa;
+    
+    --instruction-bg: rgba(59, 130, 246, 0.15);
+    --instruction-border: #3b82f6;
+    --instruction-text: #bfdbfe;
+    /* A11: error-tekst i dark mode brøg lys-tema-farven (#ef4444). */
+    /* #f87171 er lysere rød med bedre kontrast på mørke baggrunde. */
+    --error-text: #f87171;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    font-family: 'Inter', "Segoe UI", sans-serif;
+    padding: 12px;
+    background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+    min-height: 100vh;
+    margin: 0;
+    color: var(--text-main);
+    transition: background 0.3s ease, color 0.3s ease;
+    overflow-x: hidden;
+}
+
+.container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-width: 500px;
+    margin: 0 auto;
+}
+
+/* Header & Theme Toggle */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+h2 { 
+    margin: 0; 
+    font-size: 24px; 
+    font-weight: 700;
+    color: var(--primary);
+    letter-spacing: -0.5px;
+}
+
+.theme-toggle {
+    background: transparent;
+    border: none;
+    font-size: 15px;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 50%;
+    color: var(--text-muted);
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.theme-toggle:hover {
+    background: var(--tab-bg);
+    color: var(--text-main);
+    transform: rotate(15deg);
+}
+
+.link-btn {
+    font-size: 13px;
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 600;
+    background: var(--secondary-bg);
+    padding: 6px 12px;
+    border-radius: 20px;
+    border: 1px solid var(--secondary-border);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.link-btn:hover { 
+    background: var(--instruction-bg); 
+    border-color: var(--primary);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 6px -1px rgba(37,99,235,0.1); 
+}
+
+/* Typography elements */
+h3 { margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: var(--text-main); }
+p { margin: 0; font-size: 13px; line-height: 1.5; }
+.small-text { font-size: 13px; color: var(--text-muted); margin-bottom: 16px; }
+.error-text { font-size: 13px; color: var(--error-text); margin-top: 10px; font-weight: 500; text-align: center; }
+
+/* Instruction Box */
+.instruction-box {
+    background-color: var(--instruction-bg);
+    border-left: 4px solid var(--instruction-border);
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--instruction-text);
+    border-radius: 0 8px 8px 0;
+    margin-bottom: 12px;
+    line-height: 1.4;
+}
+.instruction-box strong { font-weight: 600; color: var(--primary); }
+
+/* --- TABS --- */
+.tabs {
+    display: flex;
+    flex-wrap: wrap;          /* Wrap til 2 rækker på smalle Word-paneler */
+    background: var(--tab-bg);
+    padding: 4px;
+    border-radius: 10px;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.tab-btn {
+    flex: 1 1 calc(33.33% - 4px); /* 3 knapper per række som minimum */
+    min-width: 0;             /* Tillad krympning */
+    background: transparent;
+    border: none;
+    color: var(--tab-text);
+    font-size: 11px;          /* Lidt mindre for at spare plads */
+    font-weight: 600;
+    padding: 8px 4px;
+    border-radius: 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.tab-btn:hover:not(.active) {
+    color: var(--text-main);
+    background: rgba(100, 116, 139, 0.1);
+}
+
+.tab-btn.active {
+    background: var(--tab-active-bg);
+    color: var(--tab-active-text);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.tab-content {
+    display: none !important;
+    animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.tab-content.active {
+    display: block !important;
+}
+
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Bruges af GeoGebra loading-spinner i modalen */
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
+/* Modern Cards */
+.card {
+    background: var(--card-bg);
+    padding: 16px;
+    border-radius: 16px;
+    border: 1px solid var(--card-border);
+    box-shadow: var(--card-shadow);
+    display: flex;
+    flex-direction: column;
+    transition: background 0.3s ease, border-color 0.3s ease;
+}
+
+/* Input Fields */
+textarea, select {
+    width: 100%;
+    font-family: 'Inter', monospace;
+    font-size: 14px;
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    background: var(--input-bg);
+    color: var(--text-main);
+    transition: all 0.2s ease;
+}
+
+textarea {
+    height: 80px;
+    padding: 12px;
+    resize: vertical;
+    margin-bottom: 8px;
+}
+
+select {
+    padding: 4px 8px;
+    cursor: pointer;
+}
+
+textarea:focus, select:focus { 
+    outline: none; 
+    border-color: var(--primary); 
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15); 
+}
+
+/* Buttons */
+.btn-group {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    margin-bottom: 10px;
+}
+
+/* A10: Fjern !important ved at ekskludere .ggb-modal-actions-knapper
+   fra den globale button-regel. Således arver de stadig de øvrige
+   button-regler (font, cursor, border-radius) men ikke flex:1 og padding. */
+button:not(.tab-btn):not(.theme-toggle):not(.link-btn):not(.ggb-modal-actions button) {
+    padding: 12px 8px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: 'Inter', sans-serif;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 6px;
+}
+
+button:not(.tab-btn):not(.theme-toggle):not(.link-btn):active:not(:disabled) { 
+    transform: scale(0.97); 
+}
+
+.primary-btn {
+    background: var(--primary);
+    color: var(--primary-text);
+    box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+}
+.primary-btn:hover:not(:disabled) { 
+    background: var(--primary-hover);
+    box-shadow: 0 4px 10px rgba(37, 99, 235, 0.35); 
+    transform: translateY(-1px); 
+}
+.primary-btn:disabled { 
+    background: var(--secondary-border); 
+    color: var(--text-muted); 
+    box-shadow: none; 
+    cursor: not-allowed; 
+}
+
+.secondary-btn {
+    background-color: var(--secondary-bg);
+    color: var(--secondary-text);
+    border: 1px solid var(--secondary-border);
+}
+.secondary-btn:hover:not(:disabled) { 
+    background-color: var(--secondary-hover-bg); 
+    border-color: var(--text-muted);
+}
+.secondary-btn:disabled { 
+    opacity: 0.6;
+    cursor: not-allowed; 
+}
+
+/* Result Box */
+.result-box {
+    min-height: 40px;
+    padding: 12px;
+    background-color: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    font-family: 'Inter', monospace;
+    font-size: 14px;
+    color: var(--text-main);
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+/* Triangle Grid */
+.triangle-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.triangle-input-wrapper {
+    display: flex;
+    align-items: center;
+    background: var(--input-bg);
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--input-border);
+    transition: all 0.2s ease;
+}
+.triangle-input-wrapper:focus-within { 
+    border-color: var(--primary); 
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15); 
+    background: var(--card-bg);
+}
+
+.triangle-input-wrapper label { 
+    width: 24px; 
+    font-weight: 600; 
+    color: var(--text-muted); 
+    font-style: italic; 
+    font-size: 14px; 
+}
+.triangle-input-wrapper input { 
+    width: 100%; 
+    padding: 4px; 
+    border: none; 
+    background: transparent; 
+    font-family: 'Inter', sans-serif; 
+    font-size: 14px; 
+    color: var(--text-main); 
+}
+.triangle-input-wrapper input:focus { outline: none; }
+.triangle-input-wrapper input::placeholder { color: var(--text-muted); opacity: 0.5; }
+
+/* Options Container */
+.settings-details summary {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.2s ease;
+}
+.settings-details summary:hover {
+    color: var(--primary);
+}
+
+.options-container {
+    margin-top: 8px;
+    margin-bottom: 8px;
+    padding: 10px;
+    background: var(--input-bg);
+    border-radius: 8px;
+    border: 1px solid var(--card-border);
+    font-size: 13px; 
+    color: var(--text-main);
+}
+.options-container label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    font-weight: 500;
+}
+.options-container input[type="checkbox"] {
+    accent-color: var(--primary);
+    width: 16px;
+    height: 16px;
+    margin-right: 8px;
+    cursor: pointer;
+}
+
+/* Mini buttons for symbols */
+.symbol-buttons {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+}
+.symbol-buttons button {
+    padding: 8px !important;
+    font-size: 14px !important;
+}
+
+/* ==========================================
+   GEOGEBRA MODAL OVERLAY
+   Dækker hele taskpane-vinduet — undgår at
+   GeoGebra (width:800+) flyder ud over designet
+   ========================================== */
+.ggb-modal {
+    display: none;
+    position: fixed;
+    inset: 0;                 /* top/right/bottom/left: 0 */
+    z-index: 9999;
+    flex-direction: column;
+    background: var(--bg-gradient-start);
+    animation: fadeIn 0.18s ease;
+}
+
+.ggb-modal.open {
+    display: flex;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+.ggb-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 10px;
+    background: var(--card-bg);
+    border-bottom: 1px solid var(--card-border);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+    flex-shrink: 0;
+    gap: 8px;
+}
+
+.ggb-modal-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--primary);
+    white-space: nowrap;
+}
+
+.ggb-modal-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+/* Modal-knapper: kompakte dimensioner uden flex-stretch.
+   A10: !important er fjernet — knapperne er nu ekskluderet fra
+   den globale button-regel via :not(.ggb-modal-actions button). */
+.ggb-modal-actions button {
+    padding: 6px 10px;
+    font-size: 12px;
+    flex: none;
+}
+
+.ggb-modal-body {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+}
+
+/* GeoGebra iframe fylder hele modal-body */
+.ggb-modal-body #ggb-element,
+.ggb-modal-body #ggb-element iframe {
+    width: 100% !important;
+    height: 100% !important;
+    border: none;
+}
+
+/* Status-bar i bunden af modalen */
+.ggb-modal-status {
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 4px 10px;
+    background: var(--card-bg);
+    border-top: 1px solid var(--card-border);
+    text-align: center;
+    flex-shrink: 0;
+}
