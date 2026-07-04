@@ -164,6 +164,7 @@ window.calculateInline = async function(actionType) {
                         .replace(/\\/g, ''); // Fjern alle andre backslashes for et renere look
                 };
 
+                let ooxml = "";
                 try {
                     let targetRange = context.document.getSelection();
                     
@@ -172,7 +173,7 @@ window.calculateInline = async function(actionType) {
                             ? originalLatex + " " + prefix + latexResult
                             : prefix + latexResult;
                             
-                        const ooxml = window.latexToOoxml(fullLatex);
+                        ooxml = window.latexToOoxml(fullLatex);
                         
                         // Hvis brugeren har markeret tekst, prøver vi at indsnævre markeringen for at undgå at slette usynlige linjeskift (som ødelægger linjen ovenover)
                         if (wasHighlighted && textToParse) {
