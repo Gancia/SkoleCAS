@@ -201,13 +201,14 @@ window.calculateInline = async function(actionType) {
                         targetRange.insertText(fallbackTxt, "Replace");
                         await context.sync();
                     }
-                } catch(e) {
-                    // v28: log tydeligt så fejlen er synlig i Word DevTools-konsollen
-                    console.error("❌ OOXML-indsættelse fejlede:", e);
-                    console.error("   Fejl-type:", e && e.name);
-                    console.error("   Fejlbesked:", e && e.message);
-                    console.error("   Stack:", e && e.stack);
-                    console.warn("↩️ Bruger tekst-fallback efter OOXML-fejl");
+                } catch (ooxmlErr) {
+                    console.error("❌ OOXML-indsættelse fejlede:", ooxmlErr);
+                    console.error("   Fejl-type:", ooxmlErr.constructor.name);
+                    console.error("   Fejlbesked:", ooxmlErr.message);
+                    console.error("   Stack:", ooxmlErr.stack);
+                    console.error("   OOXML der fejlede:", ooxml); // LOG THE INVALID OOXML!
+                    console.log("↩️ Bruger tekst-fallback efter OOXML-fejl");
+                    
                     let insertRange = context.document.getSelection();
                     const fallbackTxt = wasHighlighted ? textToParse + " " + getFallbackText() : " " + getFallbackText();
                     
