@@ -203,25 +203,10 @@ window.calculateInline = async function(actionType) {
                     }
                 } catch (ooxmlErr) {
                     console.error("❌ OOXML-indsættelse fejlede:", ooxmlErr);
-                    console.error("   Fejl-type:", ooxmlErr.constructor.name);
                     console.error("   Fejlbesked:", ooxmlErr.message);
-                    console.error("   Stack:", ooxmlErr.stack);
-                    console.error("   OOXML der fejlede:", ooxml); // LOG THE INVALID OOXML!
-                    console.log("↩️ Bruger tekst-fallback efter OOXML-fejl");
-                    
+                    // PRINT XML INTO DOCUMENT FOR DEBUGGING
                     let insertRange = context.document.getSelection();
-                    const fallbackTxt = wasHighlighted ? textToParse + " " + getFallbackText() : " " + getFallbackText();
-                    
-                    if (wasHighlighted && textToParse) {
-                        let searchResults = insertRange.search(textToParse, {matchCase: true});
-                        searchResults.load("items");
-                        await context.sync();
-                        if (searchResults.items.length > 0) {
-                            insertRange = searchResults.items[0];
-                        }
-                    }
-                    
-                    insertRange.insertText(fallbackTxt, "Replace");
+                    insertRange.insertText("FEJL I XML: " + ooxml, "Replace");
                     await context.sync();
                 }
             }
