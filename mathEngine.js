@@ -261,6 +261,12 @@ window.calculateInline = async function(actionType) {
                             let serializer = new XMLSerializer();
                             let newOoxml = serializer.serializeToString(xmlDoc);
                             
+                            // Sikr at Flat OPC headers bevares til Word Web
+                            let preambleMatch = pOoxml.value.match(/^(<\\?xml[^>]+>\\s*<\\?mso-application[^>]+>\\s*)/i);
+                            let preamble = preambleMatch ? preambleMatch[1] : '<?xml version="1.0" standalone="yes"?>\n<?mso-application progid="Word.Document"?>\n';
+                            newOoxml = newOoxml.replace(/^<\\?xml[^>]+>\\s*/i, '');
+                            newOoxml = preamble + newOoxml;
+                            
                             // 8. Erstat hele afsnittet med den modifikerede OOXML (blok-til-blok erstatning virker i Word Web)
                             paragraph.insertOoxml(newOoxml, "Replace");
                             await context.sync(); 

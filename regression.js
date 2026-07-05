@@ -203,6 +203,11 @@ window.calculateRegression = async function() {
                     let serializer = new XMLSerializer();
                     let newOoxml = serializer.serializeToString(xmlDoc);
                     
+                    let preambleMatch = pOoxml.value.match(/^(<\\?xml[^>]+>\\s*<\\?mso-application[^>]+>\\s*)/i);
+                    let preamble = preambleMatch ? preambleMatch[1] : '<?xml version="1.0" standalone="yes"?>\n<?mso-application progid="Word.Document"?>\n';
+                    newOoxml = newOoxml.replace(/^<\\?xml[^>]+>\\s*/i, '');
+                    newOoxml = preamble + newOoxml;
+                    
                     insertedParagraph = paragraph.insertOoxml(newOoxml, "Replace");
                 } else {
                     let insertedRange = range.insertOoxml(window.latexToOoxml(fullLatex), "Replace");
