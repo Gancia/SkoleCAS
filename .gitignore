@@ -36,3 +36,4 @@ yarn-error.log*
 logo/
 test/
 math_test.html
+backup_safe/
