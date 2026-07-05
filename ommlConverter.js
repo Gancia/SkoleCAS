@@ -380,3 +380,25 @@ window.latexToOoxml = function(latexStr) {
     const omml = latexToOmmlViaJs(latexStr);
     return buildFlatOpc(omml);
 };
+
+window.latexToOmmlString = function(latexStr) {
+    let omml = "";
+    const katexReady = (typeof window.katex !== 'undefined');
+    if (xsltProcessor && katexReady) {
+        try {
+            omml = latexToOmmlViaXslt(latexStr);
+        } catch (e) {
+            console.warn("⚠️ XSLT-pipeline fejlede, forsøger JS-fallback:", e.message);
+        }
+    }
+    if (!omml) {
+        omml = latexToOmmlViaJs(latexStr);
+    }
+    
+    // Sørg for at namespace er tilstede, da vi parser dette direkte i workarounden
+    if (!omml.includes('xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"')) {
+        omml = omml.replace('<m:oMath>', '<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">');
+        omml = omml.replace('<m:oMathPara>', '<m:oMathPara xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">');
+    }
+    return omml;
+};

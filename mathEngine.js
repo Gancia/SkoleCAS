@@ -169,12 +169,12 @@ window.calculateInline = async function(actionType) {
                 try {
                     let targetRange = context.document.getSelection();
                     
-                    if (window.latexToOoxml) {
+                    if (window.latexToOmmlString) {
                         const fullLatex = wasHighlighted 
                             ? originalLatex + " " + prefix + latexResult
                             : prefix + latexResult;
                             
-                        ooxml = window.latexToOoxml(fullLatex);
+                        let ommlString = window.latexToOmmlString(fullLatex);
                         
                         // Hvis brugeren har markeret tekst, prøver vi at indsnævre markeringen for at undgå at slette usynlige linjeskift (som ødelægger linjen ovenover)
                         if (wasHighlighted && textToParse) {
@@ -186,8 +186,50 @@ window.calculateInline = async function(actionType) {
                             }
                         }
                         
-                        targetRange.insertOoxml(ooxml, "Replace");
-                        await context.sync(); 
+                        // 1. Indpak markeringen i en midlertidig Content Control
+                        let ccTag = "MATH_TARGET_" + Date.now();
+                        let cc = targetRange.insertContentControl();
+                        cc.tag = ccTag;
+                        
+                        // 2. Find afsnittet
+                        let paragraph = cc.paragraphs.getFirst();
+                        let pOoxml = paragraph.getOoxml();
+                        await context.sync();
+                        
+                        // 3. Parse afsnittets OOXML
+                        let parser = new DOMParser();
+                        let xmlDoc = parser.parseFromString(pOoxml.value, "text/xml");
+                        
+                        // 4. Find vores Content Control tag (<w:sdt>)
+                        let tags = xmlDoc.getElementsByTagName("*");
+                        let targetSdt = null;
+                        for (let i = 0; i < tags.length; i++) {
+                            if (tags[i].localName === "tag" && tags[i].getAttribute("w:val") === ccTag) {
+                                targetSdt = tags[i].parentNode.parentNode;
+                                break;
+                            }
+                        }
+                        
+                        if (targetSdt) {
+                            // 5. Parse OMML
+                            let mathDoc = parser.parseFromString(ommlString, "text/xml");
+                            let importedMathNode = xmlDoc.importNode(mathDoc.documentElement, true);
+                            
+                            // 6. Erstat Content Control (<w:sdt>) med vores <m:oMath>
+                            targetSdt.parentNode.replaceChild(importedMathNode, targetSdt);
+                            
+                            // 7. Serialisér tilbage til OOXML string
+                            let serializer = new XMLSerializer();
+                            let newOoxml = serializer.serializeToString(xmlDoc);
+                            
+                            // 8. Erstat hele afsnittet med den modifikerede OOXML (blok-til-blok erstatning virker i Word Web)
+                            paragraph.insertOoxml(newOoxml, "Replace");
+                            await context.sync(); 
+                        } else {
+                            // Fallback hvis vi ikke kunne finde content controlen (sker sjældent)
+                            targetRange.insertOoxml(window.latexToOoxml(fullLatex), "Replace");
+                            await context.sync();
+                        }
                     } else {
                         const fallbackTxt = wasHighlighted ? textToParse + " " + getFallbackText() : " " + getFallbackText();
                         

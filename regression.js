@@ -104,9 +104,12 @@ window.calculateRegression = async function() {
         let fullLatex = `f(x) = ${fLatexStr} \\quad \\lor \\quad ${rLatexStr}`;
 
         // Konverter til Word OOXML
+        let ommlString = "";
         let ooxml = "";
-        if (window.latexToOoxml) {
-            ooxml = window.latexToOoxml(fullLatex);
+        if (window.latexToOmmlString) {
+            ommlString = window.latexToOmmlString(fullLatex);
+        } else if (window.latexToOoxml) {
+            ooxml = window.latexToOoxml(fullLatex); // Fallback
         }
 
         // O1: Valider at base64-strengen ikke er tom inden indsættelse.
@@ -127,16 +130,58 @@ window.calculateRegression = async function() {
 
         await Word.run(async (context) => {
             const range = context.document.getSelection();
-            let insertedRange;
-            if (ooxml) {
-                insertedRange = range.insertOoxml(ooxml, "Replace");
+            let insertedParagraph = null;
+            
+            if (ommlString) {
+                // 1. Indpak markeringen i en midlertidig Content Control
+                let ccTag = "MATH_TARGET_" + Date.now();
+                let cc = range.insertContentControl();
+                cc.tag = ccTag;
+                
+                // 2. Find afsnittet
+                let paragraph = cc.paragraphs.getFirst();
+                let pOoxml = paragraph.getOoxml();
+                await context.sync();
+                
+                // 3. Parse afsnittets OOXML
+                let parser = new DOMParser();
+                let xmlDoc = parser.parseFromString(pOoxml.value, "text/xml");
+                
+                // 4. Find vores Content Control tag (<w:sdt>)
+                let tags = xmlDoc.getElementsByTagName("*");
+                let targetSdt = null;
+                for (let i = 0; i < tags.length; i++) {
+                    if (tags[i].localName === "tag" && tags[i].getAttribute("w:val") === ccTag) {
+                        targetSdt = tags[i].parentNode.parentNode;
+                        break;
+                    }
+                }
+                
+                if (targetSdt) {
+                    let mathDoc = parser.parseFromString(ommlString, "text/xml");
+                    let importedMathNode = xmlDoc.importNode(mathDoc.documentElement, true);
+                    targetSdt.parentNode.replaceChild(importedMathNode, targetSdt);
+                    
+                    let serializer = new XMLSerializer();
+                    let newOoxml = serializer.serializeToString(xmlDoc);
+                    
+                    insertedParagraph = paragraph.insertOoxml(newOoxml, "Replace");
+                } else {
+                    let insertedRange = range.insertOoxml(window.latexToOoxml(fullLatex), "Replace");
+                    insertedParagraph = insertedRange.paragraphs.getLast();
+                }
+            } else if (ooxml) {
+                let insertedRange = range.insertOoxml(ooxml, "Replace");
+                insertedParagraph = insertedRange.paragraphs.getLast();
             } else {
                 // Fallback
                 let fallbackTxt = fullLatex.replace(/\\quad \\lor \\quad/g, ' eller ').replace(/\\cdot/g, '*');
-                insertedRange = range.insertText(fallbackTxt, "Replace");
+                let insertedRange = range.insertText(fallbackTxt, "Replace");
+                insertedParagraph = insertedRange.paragraphs.getLast();
             }
             
-            let p = insertedRange.insertParagraph("", "After");
+            // Indsæt billede efter det netop indsatte/opdaterede afsnit
+            let p = insertedParagraph.insertParagraph("", "After");
             p.insertInlinePictureFromBase64(base64, "End");
             
             if (window.ensureFooter) {
