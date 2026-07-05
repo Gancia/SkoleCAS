@@ -1,5 +1,5 @@
 /**
- * ommlConverter.js  v28
+ * ommlConverter.js  v38
  * Pipeline: LaTeX → MathML (KaTeX) → OMML (XSLT) → Flat OPC OOXML (Word)
  *
  * Rettelser i v28:
@@ -137,8 +137,8 @@ function latexFragmentToOmml(latex) {
                 const num = nextGroup(i + 1);
                 const den = nextGroup(i + 1 + num.consumed);
                 out += `<m:f><m:fPr><m:type m:val="bar"/></m:fPr>` +
-                       `<m:num>${latexFragmentToOmml(num.content)}</m:num>` +
-                       `<m:den>${latexFragmentToOmml(den.content)}</m:den></m:f>`;
+                       `<m:num><m:e>${latexFragmentToOmml(num.content)}</m:e></m:num>` +
+                       `<m:den><m:e>${latexFragmentToOmml(den.content)}</m:e></m:den></m:f>`;
                 i += 1 + num.consumed + den.consumed;
                 continue;
             }

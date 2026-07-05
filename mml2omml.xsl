@@ -1215,11 +1215,15 @@
       </xsl:element>
       <xsl:element name="m:num">
         <xsl:call-template name="CreateArgProp" />
-        <xsl:apply-templates select="child::*[1]" />
+        <xsl:element name="m:e">
+          <xsl:apply-templates select="child::*[1]" />
+        </xsl:element>
       </xsl:element>
       <xsl:element name="m:den">
         <xsl:call-template name="CreateArgProp" />
-        <xsl:apply-templates select="child::*[2]" />
+        <xsl:element name="m:e">
+          <xsl:apply-templates select="child::*[2]" />
+        </xsl:element>
       </xsl:element>
     </xsl:element>
   </xsl:template>
@@ -1524,11 +1528,15 @@
       </xsl:element>
       <xsl:element name="m:num">
         <xsl:call-template name="CreateArgProp" />
-        <xsl:apply-templates select="$ndCur/*[1]" />
+        <xsl:element name="m:e">
+          <xsl:apply-templates select="$ndCur/*[1]" />
+        </xsl:element>
       </xsl:element>
       <xsl:element name="m:den">
         <xsl:call-template name="CreateArgProp" />
-        <xsl:apply-templates select="$ndCur/*[3]" />
+        <xsl:element name="m:e">
+          <xsl:apply-templates select="$ndCur/*[3]" />
+        </xsl:element>
       </xsl:element>
     </xsl:element>
   </xsl:template>
