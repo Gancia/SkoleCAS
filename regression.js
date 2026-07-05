@@ -106,6 +106,13 @@ window.calculateRegression = async function() {
         // Konverter til Word OOXML
         let ommlString = "";
         let ooxml = "";
+        
+        const stackedToggle = document.getElementById("stackedFractionToggle");
+        const isStacked = stackedToggle ? stackedToggle.checked : true;
+        if (window.formatFractions) {
+            fullLatex = window.formatFractions(fullLatex, isStacked);
+        }
+        
         if (window.latexToOmmlString) {
             ommlString = window.latexToOmmlString(fullLatex);
         } else if (window.latexToOoxml) {

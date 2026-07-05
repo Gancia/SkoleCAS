@@ -402,3 +402,91 @@ window.latexToOmmlString = function(latexStr) {
     }
     return omml;
 };
+
+// ─────────────────────────────────────────────────────────────────
+//  formatFractions — konverterer mellem / og \frac baseret på indstilling
+// ─────────────────────────────────────────────────────────────────
+window.formatFractions = function(fullLatex, isStacked) {
+    if (isStacked) {
+        // Erstat 1/2 og (a+b)/c med \frac{1}{2} og \frac{a+b}{c}
+        let result = fullLatex;
+        let index = result.indexOf('/');
+        while (index !== -1) {
+            let leftStart = index - 1;
+            let num = '';
+            if (result[leftStart] === ')') {
+                let depth = 1; leftStart--;
+                while (leftStart >= 0 && depth > 0) {
+                    if (result[leftStart] === ')') depth++;
+                    if (result[leftStart] === '(') depth--;
+                    leftStart--;
+                }
+                leftStart++;
+                num = result.substring(leftStart + 1, index - 1);
+            } else {
+                while (leftStart >= 0 && /[a-zA-Z0-9_.\\{}]/.test(result[leftStart])) leftStart--;
+                leftStart++;
+                num = result.substring(leftStart, index);
+            }
+            
+            let rightEnd = index + 1;
+            let den = '';
+            if (result[rightEnd] === '(') {
+                let depth = 1; rightEnd++;
+                while (rightEnd < result.length && depth > 0) {
+                    if (result[rightEnd] === '(') depth++;
+                    if (result[rightEnd] === ')') depth--;
+                    rightEnd++;
+                }
+                rightEnd--;
+                den = result.substring(index + 2, rightEnd);
+            } else {
+                while (rightEnd < result.length && /[a-zA-Z0-9_.\\{}]/.test(result[rightEnd])) rightEnd++;
+                rightEnd--;
+                den = result.substring(index + 1, rightEnd + 1);
+            }
+            
+            if (leftStart < index && rightEnd > index && num && den) {
+                result = result.substring(0, leftStart) + `\\frac{${num}}{${den}}` + result.substring(rightEnd + 1);
+                index = result.indexOf('/');
+            } else {
+                index = result.indexOf('/', index + 1);
+            }
+        }
+        return result;
+    } else {
+        // Konverter \frac{a}{b} til a/b
+        let result = fullLatex;
+        let index = result.indexOf('\\frac{');
+        while (index !== -1) {
+            let p1Start = index + 5;
+            if (result[p1Start] !== '{') break;
+            let depth1 = 1, p1End = p1Start + 1;
+            while (p1End < result.length && depth1 > 0) {
+                if (result[p1End] === '{') depth1++;
+                if (result[p1End] === '}') depth1--;
+                p1End++;
+            }
+            p1End--;
+            let num = result.substring(p1Start + 1, p1End);
+            
+            let p2Start = p1End + 1;
+            if (result[p2Start] !== '{') break;
+            let depth2 = 1, p2End = p2Start + 1;
+            while (p2End < result.length && depth2 > 0) {
+                if (result[p2End] === '{') depth2++;
+                if (result[p2End] === '}') depth2--;
+                p2End++;
+            }
+            p2End--;
+            let den = result.substring(p2Start + 1, p2End);
+            
+            if (/[\+\-\*\=\s]/.test(num) && !(num.startsWith('(') && num.endsWith(')'))) num = `(${num})`;
+            if (/[\+\-\*\=\s]/.test(den) && !(den.startsWith('(') && den.endsWith(')'))) den = `(${den})`;
+            
+            result = result.substring(0, index) + `${num}/${den}` + result.substring(p2End + 1);
+            index = result.indexOf('\\frac{');
+        }
+        return result;
+    }
+};

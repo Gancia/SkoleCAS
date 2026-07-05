@@ -170,9 +170,16 @@ window.calculateInline = async function(actionType) {
                     let targetRange = context.document.getSelection();
                     
                     if (window.latexToOmmlString) {
-                        const fullLatex = wasHighlighted 
+                        const stackedToggle = document.getElementById("stackedFractionToggle");
+                        const isStacked = stackedToggle ? stackedToggle.checked : true;
+                        
+                        let fullLatex = wasHighlighted 
                             ? originalLatex + " " + prefix + latexResult
                             : prefix + latexResult;
+                            
+                        if (window.formatFractions) {
+                            fullLatex = window.formatFractions(fullLatex, isStacked);
+                        }
                             
                         let ommlString = window.latexToOmmlString(fullLatex);
                         
