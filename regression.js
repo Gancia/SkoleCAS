@@ -145,6 +145,9 @@ window.calculateRegression = async function() {
                 let cc = range.insertContentControl();
                 cc.tag = ccTag;
                 
+                // Sørg for at CC ikke er tom
+                cc.insertText("MATH_PLACEHOLDER", "Replace");
+                
                 // 2. Find afsnittet
                 let paragraph = cc.paragraphs.getFirst();
                 let pOoxml = paragraph.getOoxml();
@@ -155,13 +158,41 @@ window.calculateRegression = async function() {
                 let xmlDoc = parser.parseFromString(pOoxml.value, "text/xml");
                 
                 // 4. Find vores Content Control tag (<w:sdt>)
-                let tags = xmlDoc.getElementsByTagName("*");
                 let targetSdt = null;
+                let tags = xmlDoc.getElementsByTagName("*");
+                
+                // A: Prøv via ccTag
                 for (let i = 0; i < tags.length; i++) {
-                    if (tags[i].localName === "tag" && tags[i].getAttribute("w:val") === ccTag) {
-                        targetSdt = tags[i].parentNode.parentNode;
-                        break;
+                    if (tags[i].nodeName === "w:tag" || tags[i].localName === "tag") {
+                        let val = tags[i].getAttribute("w:val") || tags[i].getAttribute("val");
+                        if (val === ccTag) {
+                            targetSdt = tags[i].parentNode.parentNode;
+                            break;
+                        }
                     }
+                }
+                
+                // B: Fallback via MATH_PLACEHOLDER
+                if (!targetSdt) {
+                    for (let i = 0; i < tags.length; i++) {
+                        if ((tags[i].nodeName === "w:t" || tags[i].localName === "t") && tags[i].textContent.includes("MATH_PLACEHOLDER")) {
+                            let p = tags[i].parentNode;
+                            while (p && p.nodeName !== "w:sdt" && p.localName !== "sdt") {
+                                p = p.parentNode;
+                            }
+                            if (p) {
+                                targetSdt = p;
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // C: Sidste udvej
+                if (!targetSdt) {
+                    let sdts = xmlDoc.getElementsByTagName("w:sdt");
+                    if (sdts.length === 0) sdts = xmlDoc.getElementsByTagName("sdt");
+                    if (sdts.length > 0) targetSdt = sdts[sdts.length - 1];
                 }
                 
                 if (targetSdt) {
