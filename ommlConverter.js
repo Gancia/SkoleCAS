@@ -62,190 +62,9 @@ function sanitizeLatex(latex) {
 }
 
 // ─────────────────────────────────────────────────────────────────
-//  JS-FALLBACK: simpel LaTeX → OMML konverter
-//  Dækker de mest almindelige gymnasiematematik-udtryk uden XSLT.
+//  JS-FALLBACK
+//  (Fjernet JS-fallback ifølge plan for at sikre streng OOXML-compliance)
 // ─────────────────────────────────────────────────────────────────
-
-/**
- * Tokenisér LaTeX i en liste af {type, value} objekter.
- * Typer: 'cmd' (\\frac etc), 'group' ({...}), 'char', 'space'
- */
-function tokenizeLatex(latex) {
-    const tokens = [];
-    let i = 0;
-    while (i < latex.length) {
-        if (latex[i] === '\\') {
-            // Kommando: \frac, \sqrt, \sin, \approx, \Rightarrow osv.
-            let j = i + 1;
-            if (j < latex.length && /[a-zA-Z]/.test(latex[j])) {
-                while (j < latex.length && /[a-zA-Z]/.test(latex[j])) j++;
-                tokens.push({ type: 'cmd', value: latex.slice(i, j) });
-            } else {
-                // enkelt-tegn kommando f.eks. \\, \{ \}
-                tokens.push({ type: 'cmd', value: latex.slice(i, i + 2) });
-                j = i + 2;
-            }
-            i = j;
-        } else if (latex[i] === '{') {
-            // Find matchende }
-            let depth = 1, j = i + 1;
-            while (j < latex.length && depth > 0) {
-                if (latex[j] === '{') depth++;
-                else if (latex[j] === '}') depth--;
-                j++;
-            }
-            tokens.push({ type: 'group', value: latex.slice(i + 1, j - 1) });
-            i = j;
-        } else if (latex[i] === ' ') {
-            i++;
-        } else {
-            tokens.push({ type: 'char', value: latex[i] });
-            i++;
-        }
-    }
-    return tokens;
-}
-
-/**
- * Konvertér en LaTeX-streng til OMML-fragmentstreng (indhold af <m:oMath>).
- * Rekursivt: grupper parses igen.
- */
-function latexFragmentToOmml(latex) {
-    latex = latex.trim();
-    if (!latex) return '';
-
-    const tokens = tokenizeLatex(latex);
-    let out = '';
-    let i = 0;
-
-    function nextGroup(startIdx) {
-        // Returner næste token hvis det er en group, ellers tag næste char som group-indhold
-        if (startIdx < tokens.length && tokens[startIdx].type === 'group') {
-            return { content: tokens[startIdx].value, consumed: 1 };
-        } else if (startIdx < tokens.length && tokens[startIdx].type === 'char') {
-            return { content: tokens[startIdx].value, consumed: 1 };
-        }
-        return { content: '', consumed: 0 };
-    }
-
-    while (i < tokens.length) {
-        const tok = tokens[i];
-
-        if (tok.type === 'cmd') {
-            // ──────── \frac{num}{den} ────────
-            if (tok.value === '\\frac') {
-                const num = nextGroup(i + 1);
-                const den = nextGroup(i + 1 + num.consumed);
-                out += `<m:f><m:fPr><m:type m:val="bar"/></m:fPr>` +
-                       `<m:num><m:e>${latexFragmentToOmml(num.content)}</m:e></m:num>` +
-                       `<m:den><m:e>${latexFragmentToOmml(den.content)}</m:e></m:den></m:f>`;
-                i += 1 + num.consumed + den.consumed;
-                continue;
-            }
-
-            // ──────── \sqrt{x} ────────
-            if (tok.value === '\\sqrt') {
-                const arg = nextGroup(i + 1);
-                out += `<m:rad><m:radPr><m:degHide m:val="1"/></m:radPr>` +
-                       `<m:deg><m:e/></m:deg>` +
-                       `<m:e>${latexFragmentToOmml(arg.content)}</m:e></m:rad>`;
-                i += 1 + arg.consumed;
-                continue;
-            }
-
-            // ──────── \approx, \Rightarrow, \int, \pi, \cdot, \lor ────────
-            const SYMBOL_MAP = {
-                '\\approx': '≈', '\\Rightarrow': '⇒', '\\rightarrow': '→',
-                '\\int': '∫', '\\pi': 'π', '\\cdot': '·',
-                '\\lor': '∨', '\\land': '∧', '\\infty': '∞',
-                '\\leq': '≤', '\\geq': '≥', '\\neq': '≠',
-                '\\times': '×', '\\div': '÷', '\\pm': '±',
-                '\\alpha': 'α', '\\beta': 'β', '\\gamma': 'γ',
-                '\\delta': 'δ', '\\theta': 'θ', '\\lambda': 'λ',
-                '\\mu': 'μ', '\\sigma': 'σ', '\\omega': 'ω',
-            };
-            if (SYMBOL_MAP[tok.value]) {
-                out += `<m:r><m:t>${SYMBOL_MAP[tok.value]}</m:t></m:r>`;
-                i++;
-                continue;
-            }
-
-            // ──────── \sin, \cos, \tan, \ln, \log, \exp ────────
-            const FUNC_NAMES = ['\\sin','\\cos','\\tan','\\cot','\\sec','\\csc',
-                                '\\ln','\\log','\\exp','\\arcsin','\\arccos','\\arctan'];
-            if (FUNC_NAMES.includes(tok.value)) {
-                const name = tok.value.slice(1); // fjern backslash
-                out += `<m:func><m:funcPr/><m:fName><m:r><m:rPr><m:sty m:val="p"/></m:rPr><m:t>${name}</m:t></m:r></m:fName><m:e/>` +
-                       `</m:func>`;
-                i++;
-                continue;
-            }
-
-            // Ukendt kommando — ignorer
-            i++;
-            continue;
-        }
-
-        if (tok.type === 'group') {
-            // En isoleret gruppe — rekursivt parse indholdet
-            out += latexFragmentToOmml(tok.value);
-            i++;
-            continue;
-        }
-
-        if (tok.type === 'char') {
-            const c = tok.value;
-
-            // ──────── superscript: x^{n} eller x^n ────────
-            if (c === '^') {
-                const base = out; // alt hidtil er basen (simplificeret)
-                const sup = nextGroup(i + 1);
-                // Erstatter hele out med en sSup-node
-                out = `<m:sSup><m:sSupPr/><m:e>${base}</m:e>` +
-                      `<m:sup>${latexFragmentToOmml(sup.content)}</m:sup></m:sSup>`;
-                i += 1 + sup.consumed;
-                continue;
-            }
-
-            // ──────── subscript: x_{n} ────────
-            if (c === '_') {
-                const base = out;
-                const sub = nextGroup(i + 1);
-                out = `<m:sSub><m:sSubPr/><m:e>${base}</m:e>` +
-                      `<m:sub>${latexFragmentToOmml(sub.content)}</m:sub></m:sSub>`;
-                i += 1 + sub.consumed;
-                continue;
-            }
-
-            // Almindeligt tegn (tal, bogstav, operator)
-            out += `<m:r><m:t>${escOmml(c)}</m:t></m:r>`;
-            i++;
-            continue;
-        }
-
-        i++;
-    }
-
-    return out;
-}
-
-function escOmml(str) {
-    if (!str) return '';
-    return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-}
-
-/**
- * Fuldt oMath-element via JS-fallback (ingen XSLT).
- */
-function latexToOmmlViaJs(latexStr) {
-    const sanitized = sanitizeLatex(latexStr);
-    const inner = latexFragmentToOmml(sanitized);
-    return `<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">${inner}</m:oMath>`;
-}
 
 // ─────────────────────────────────────────────────────────────────
 //  XSLT-pipeline: LaTeX → MathML (KaTeX) → OMML (XSLT)
@@ -294,16 +113,20 @@ function latexToOmmlViaXslt(latexStr) {
 
     // FJERNER ANNOTATIONS!
     // KaTeX indsætter <annotation> med rå LaTeX (fx "\frac{1}{2}"). 
-    // mml2omml.xsl ignorerer tagget, men dens catch-all template kopierer selve teksten over.
-    // Resultatet er, at ren tekst ender ulovligt inde i OMML og får Word til at crashe fuldstændigt.
     const annotations = mathDoc.querySelectorAll("annotation");
     for (let i = 0; i < annotations.length; i++) {
         annotations[i].parentNode.removeChild(annotations[i]);
     }
+    
+    // Udpak <semantics> tagget for at sikre ren MathML før XSLT processerer det,
+    // og derved forhindre uønsket HTML/XML leakage.
     const semantics = mathDoc.querySelectorAll("semantics");
     for (let i = 0; i < semantics.length; i++) {
-        // Semantics-tagget alene er uskadeligt når annotation fjernes,
-        // men vi kan lige så godt lade det være, for XSLT's catch-all håndterer det.
+        const sem = semantics[i];
+        while (sem.firstChild) {
+            sem.parentNode.insertBefore(sem.firstChild, sem);
+        }
+        sem.parentNode.removeChild(sem);
     }
 
     // 3. MathML → OMML via XSLT
@@ -311,15 +134,8 @@ function latexToOmmlViaXslt(latexStr) {
     const serializer = new XMLSerializer();
     let ommlString = serializer.serializeToString(ommlDoc);
 
-    // 4. Rens serialiseret OMML
-    ommlString = ommlString
-        .replace(/<\?xml[^?]*\?>\s*/g, '')
-        // Fjern redundante xmlns-deklarationer som XMLSerializer tilføjer på <m:oMath>
-        // (de er allerede deklareret på <w:document> i den ydre Flat OPC-pakke)
-        .replace(/ xmlns:m="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/math"/g, '')
-        .replace(/ xmlns:mml="[^"]*"/g, '')
-        .replace(/ xmlns="http:\/\/www\.w3\.org\/1998\/Math\/MathML"/g, '')
-        .trim();
+    // 4. Rens serialiseret OMML (Fjern kun selve XML deklarationen, behold namespaces)
+    ommlString = ommlString.replace(/<\?xml[^?]*\?>\s*/g, '').trim();
 
     return ommlString;
 }
@@ -328,11 +144,6 @@ function latexToOmmlViaXslt(latexStr) {
 //  buildFlatOpc — pakker et OMML-fragment i en Flat OPC Word-pakke
 // ─────────────────────────────────────────────────────────────────
 function buildFlatOpc(ommlString) {
-    // Fjern namespace-deklarationer på <m:oMath> hvis de er der fra JS-fallback —
-    // <w:document> erklærer allerede xmlns:m, så de er redundante og forvirrer Word.
-    const cleanOmml = ommlString
-        .replace(/ xmlns:m="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/math"/g, '');
-
     return `<?xml version="1.0" standalone="yes"?>
 <pkg:package xmlns:pkg="http://schemas.microsoft.com/office/2006/xmlPackage">
   <pkg:part pkg:name="/word/document.xml"
@@ -344,7 +155,7 @@ function buildFlatOpc(ommlString) {
         xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
         <w:body>
           <w:p>
-            ${cleanOmml}
+            ${ommlString}
           </w:p>
         </w:body>
       </w:document>
@@ -355,52 +166,32 @@ function buildFlatOpc(ommlString) {
 
 // ─────────────────────────────────────────────────────────────────
 //  latexToOoxml — offentlig API
-//  Forsøger XSLT-pipeline først; falder tilbage til JS-konverter.
 // ─────────────────────────────────────────────────────────────────
 window.latexToOoxml = function(latexStr) {
-    // KaTeX kan stadig loade pga. defer — tjek og kast informativ fejl
     const katexReady = (typeof window.katex !== 'undefined');
 
-    if (xsltProcessor && katexReady) {
-        // ── Primær pipeline: XSLT ──
-        try {
-            const omml = latexToOmmlViaXslt(latexStr);
-            return buildFlatOpc(omml);
-        } catch (e) {
-            console.warn("⚠️ XSLT-pipeline fejlede, forsøger JS-fallback:", e.message);
-            // Fald igennem til JS-fallback
-        }
-    } else if (!katexReady) {
-        console.warn("⚠️ KaTeX ikke loaded endnu — bruger JS-fallback");
-    } else {
-        console.warn("⚠️ XSLT ikke loaded — bruger JS-fallback. Fejl:", window.ommlConverterError);
+    if (!katexReady) {
+        throw new Error("KaTeX ikke loaded endnu.");
+    }
+    if (!xsltProcessor) {
+        throw new Error("XSLT processor ikke loaded: " + window.ommlConverterError);
     }
 
-    // ── Sekundær pipeline: ren JS ──
-    const omml = latexToOmmlViaJs(latexStr);
+    const omml = latexToOmmlViaXslt(latexStr);
     return buildFlatOpc(omml);
 };
 
 window.latexToOmmlString = function(latexStr) {
-    let omml = "";
     const katexReady = (typeof window.katex !== 'undefined');
-    if (xsltProcessor && katexReady) {
-        try {
-            omml = latexToOmmlViaXslt(latexStr);
-        } catch (e) {
-            console.warn("⚠️ XSLT-pipeline fejlede, forsøger JS-fallback:", e.message);
-        }
-    }
-    if (!omml) {
-        omml = latexToOmmlViaJs(latexStr);
-    }
     
-    // Sørg for at namespace er tilstede, da vi parser dette direkte i workarounden
-    if (!omml.includes('xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"')) {
-        omml = omml.replace('<m:oMath>', '<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">');
-        omml = omml.replace('<m:oMathPara>', '<m:oMathPara xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">');
+    if (!katexReady) {
+        throw new Error("KaTeX ikke loaded endnu.");
     }
-    return omml;
+    if (!xsltProcessor) {
+        throw new Error("XSLT processor ikke loaded: " + window.ommlConverterError);
+    }
+
+    return latexToOmmlViaXslt(latexStr);
 };
 
 // ─────────────────────────────────────────────────────────────────
