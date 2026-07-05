@@ -200,7 +200,7 @@ window.calculateInline = async function(actionType) {
                         
                         // Sørg for at CC ikke er tom, ellers kan Word Web fjerne den fra OOXML. 
                         // Det overskriver kun originalteksten, som vi alligevel skal erstatte.
-                        cc.insertText("MATH_PLACEHOLDER", "Replace");
+                        cc.insertText("[Beregner...]", "Replace");
                         
                         // 2. Find afsnittet
                         let paragraph = cc.paragraphs.getFirst();
@@ -226,10 +226,10 @@ window.calculateInline = async function(actionType) {
                             }
                         }
                         
-                        // B: Fallback via MATH_PLACEHOLDER (hvis tag blev strippet, hvilket sker ofte i Word Web)
+                        // B: Fallback via [Beregner...] (hvis tag blev strippet, hvilket sker ofte i Word Web)
                         if (!targetNodeToReplace) {
                             for (let i = 0; i < tags.length; i++) {
-                                if ((tags[i].nodeName === "w:t" || tags[i].localName === "t") && tags[i].textContent.includes("MATH_PLACEHOLDER")) {
+                                if ((tags[i].nodeName === "w:t" || tags[i].localName === "t") && tags[i].textContent.includes("[Beregner...]")) {
                                     let p = tags[i].parentNode;
                                     let sdtNode = null;
                                     let rNode = null;

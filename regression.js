@@ -146,7 +146,7 @@ window.calculateRegression = async function() {
                 cc.tag = ccTag;
                 
                 // Sørg for at CC ikke er tom
-                cc.insertText("MATH_PLACEHOLDER", "Replace");
+                cc.insertText("[Beregner...]", "Replace");
                 
                 // 2. Find afsnittet
                 let paragraph = cc.paragraphs.getFirst();
@@ -172,10 +172,10 @@ window.calculateRegression = async function() {
                     }
                 }
                 
-                // B: Fallback via MATH_PLACEHOLDER
+                // B: Fallback via [Beregner...]
                 if (!targetNodeToReplace) {
                     for (let i = 0; i < tags.length; i++) {
-                        if ((tags[i].nodeName === "w:t" || tags[i].localName === "t") && tags[i].textContent.includes("MATH_PLACEHOLDER")) {
+                        if ((tags[i].nodeName === "w:t" || tags[i].localName === "t") && tags[i].textContent.includes("[Beregner...]")) {
                             let p = tags[i].parentNode;
                             let sdtNode = null;
                             let rNode = null;
