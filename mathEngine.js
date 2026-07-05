@@ -211,8 +211,8 @@ window.calculateInline = async function(actionType) {
                         let parser = new DOMParser();
                         let xmlDoc = parser.parseFromString(pOoxml.value, "text/xml");
                         
-                        // 4. Find vores Content Control tag (<w:sdt>)
-                        let targetSdt = null;
+                        // 4. Find vores Content Control tag (<w:sdt>) eller det run (<w:r>) der indeholder teksten
+                        let targetNodeToReplace = null;
                         let tags = xmlDoc.getElementsByTagName("*");
                         
                         // A: Prøv via ccTag
@@ -220,42 +220,51 @@ window.calculateInline = async function(actionType) {
                             if (tags[i].nodeName === "w:tag" || tags[i].localName === "tag") {
                                 let val = tags[i].getAttribute("w:val") || tags[i].getAttribute("val");
                                 if (val === ccTag) {
-                                    targetSdt = tags[i].parentNode.parentNode;
+                                    targetNodeToReplace = tags[i].parentNode.parentNode;
                                     break;
                                 }
                             }
                         }
                         
-                        // B: Fallback via MATH_PLACEHOLDER (hvis tag blev strippet)
-                        if (!targetSdt) {
+                        // B: Fallback via MATH_PLACEHOLDER (hvis tag blev strippet, hvilket sker ofte i Word Web)
+                        if (!targetNodeToReplace) {
                             for (let i = 0; i < tags.length; i++) {
                                 if ((tags[i].nodeName === "w:t" || tags[i].localName === "t") && tags[i].textContent.includes("MATH_PLACEHOLDER")) {
                                     let p = tags[i].parentNode;
-                                    while (p && p.nodeName !== "w:sdt" && p.localName !== "sdt") {
+                                    let sdtNode = null;
+                                    let rNode = null;
+                                    
+                                    while (p) {
+                                        if (!rNode && (p.nodeName === "w:r" || p.localName === "r")) rNode = p;
+                                        if (!sdtNode && (p.nodeName === "w:sdt" || p.localName === "sdt")) sdtNode = p;
                                         p = p.parentNode;
                                     }
-                                    if (p) {
-                                        targetSdt = p;
-                                        break;
+                                    
+                                    // Hvis vi fandt en sdt (Content Control), bruger vi den. Ellers falder vi tilbage til Run'et.
+                                    if (sdtNode) {
+                                        targetNodeToReplace = sdtNode;
+                                    } else if (rNode) {
+                                        targetNodeToReplace = rNode;
                                     }
+                                    break;
                                 }
                             }
                         }
                         
                         // C: Sidste udvej (find en sdt)
-                        if (!targetSdt) {
+                        if (!targetNodeToReplace) {
                             let sdts = xmlDoc.getElementsByTagName("w:sdt");
                             if (sdts.length === 0) sdts = xmlDoc.getElementsByTagName("sdt");
-                            if (sdts.length > 0) targetSdt = sdts[sdts.length - 1];
+                            if (sdts.length > 0) targetNodeToReplace = sdts[sdts.length - 1];
                         }
                         
-                        if (targetSdt) {
+                        if (targetNodeToReplace) {
                             // 5. Parse OMML
                             let mathDoc = parser.parseFromString(ommlString, "text/xml");
                             let importedMathNode = xmlDoc.importNode(mathDoc.documentElement, true);
                             
-                            // 6. Erstat Content Control (<w:sdt>) med vores <m:oMath>
-                            targetSdt.parentNode.replaceChild(importedMathNode, targetSdt);
+                            // 6. Erstat Content Control (<w:sdt>) ELLER Run (<w:r>) med vores <m:oMath>
+                            targetNodeToReplace.parentNode.replaceChild(importedMathNode, targetNodeToReplace);
                             
                             // 7. Serialisér tilbage til OOXML string
                             let serializer = new XMLSerializer();
