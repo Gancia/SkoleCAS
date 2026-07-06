@@ -38,6 +38,10 @@ document.addEventListener("DOMContentLoaded", function() {
     const deleteMathBtn = document.getElementById("deleteMathBtn");
     if (deleteMathBtn) {
         deleteMathBtn.addEventListener('click', async function() {
+            if (!window.isOfficeReady) {
+                console.warn("Office er ikke klar endnu.");
+                return;
+            }
             if (window.Word) {
                 try {
                     await Word.run(async (context) => {
@@ -131,9 +135,11 @@ document.addEventListener("DOMContentLoaded", function() {
     }
 });
 
+window.isOfficeReady = false;
+
 Office.onReady(function(info) {
     if (info.host === Office.HostType.Word) {
-        // Office is ready, additional Word-specific setup can go here
+        window.isOfficeReady = true;
     }
 });
 
