@@ -85,6 +85,11 @@ This document tracks known bugs, edge cases, performance bottlenecks, and code q
 ## `mathEngine.js`
 
 ### 🐞 Bugs & Edge Cases
+* **Word Web Content Control Lock Bug:**
+  * **Symptom:** Equations inserted via OMML replacement into a `<w:sdt>` (Content Control) become permanently locked in Word Web. The user cannot delete, backspace, or edit the math element.
+  * **Root Cause:** Word Web strictly tracks the `paraId` when Enter is pressed. If we try to insert math as plain text, it shares the `paraId` with the line above, causing `insertOoxml("Replace")` to overwrite the previous line. To fix this, we insert a temporary Content Control, which forces Word to generate a unique `paraId`. However, during the OOXML swap, the inner `<w:sdt>` tags are removed from the XML while Word's memory still holds the Content Control object. This mismatch corrupts the Content Control, making it undeletable.
+  * **Failed Fixes:** Stripping the `paraId` regex manually causes the overwrite bug again. Calling `cc.delete(true)` before replacing the OOXML causes Word to instantly revert the `paraId` to the duplicate one, also triggering the overwrite bug. Keeping the `<w:sdt>` in the XML but setting `cc.cannotDelete = false` also fails to behave correctly.
+  * **Potential "Crappy Solution" (Workaround):** Add a "Slet matematik" (Delete Math) button to the taskpane. Since the user cannot delete the locked box with their keyboard, they can highlight the locked equation and click the button, which calls `context.document.getSelection().clear()` or `delete()` via the Word API to forcefully remove the locked box.
 * **Null Reference in Error Handlers:** `errorBox.innerText = error.message;` throws if `errorBox` is null. `resultContainer` and `insertBtn` assumptions in `calculateDraft` also risk exceptions.
 * **Comma-to-Dot Conversion Corrupts Vectors:** Replacing `(\d),(\d)` with `.` corrupts input like `gcd(14,21)`.
 * **Unsafe Variable Extraction Fallback:** The fallback removing hardcoded function names fails on unsupported functions like `sinh(x)`, incorrectly picking `h` as the variable.
