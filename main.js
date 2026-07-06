@@ -42,6 +42,32 @@ document.addEventListener("DOMContentLoaded", function() {
                 try {
                     await Word.run(async (context) => {
                         const range = context.document.getSelection();
+                        
+                        // 1. Tjek om markeringen/cursoren er INDENI en Content Control
+                        const parentCc = range.parentContentControlOrNullObject;
+                        parentCc.load("isNullObject");
+                        
+                        // 2. Hent alle Content Controls der er fuldt markeret
+                        const ccs = range.contentControls;
+                        ccs.load("items");
+                        
+                        await context.sync();
+                        
+                        // Slet forælderen, hvis vi står indeni en
+                        if (!parentCc.isNullObject) {
+                            parentCc.cannotDelete = false;
+                            parentCc.cannotEdit = false;
+                            parentCc.delete(false); // false = slet både boks og indhold
+                        }
+                        
+                        // Slet alle markerede bokse
+                        for (let i = 0; i < ccs.items.length; i++) {
+                            ccs.items[i].cannotDelete = false;
+                            ccs.items[i].cannotEdit = false;
+                            ccs.items[i].delete(false);
+                        }
+                        
+                        // Ryd også almindelig markeret tekst
                         range.clear();
                         await context.sync();
                     });
