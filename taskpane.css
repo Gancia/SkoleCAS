@@ -147,11 +147,26 @@ h2 {
     align-items: center;
     gap: 6px;
 }
+
+.link-btn {
+    color: var(--primary);
+}
+
 .link-btn:hover { 
     background: var(--instruction-bg); 
     border-color: var(--primary);
     transform: translateY(-1px);
     box-shadow: 0 4px 6px -1px rgba(37,99,235,0.1); 
+}
+
+.delete-btn {
+    color: #e74c3c;
+    border-color: #e74c3c;
+}
+
+.delete-btn:hover {
+    background-color: #e74c3c;
+    color: white;
 }
 
 /* Typography elements */

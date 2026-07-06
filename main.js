@@ -34,6 +34,24 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     }
 
+    // "Slet markering" knap
+    const deleteMathBtn = document.getElementById("deleteMathBtn");
+    if (deleteMathBtn) {
+        deleteMathBtn.addEventListener('click', async function() {
+            if (window.Word) {
+                try {
+                    await Word.run(async (context) => {
+                        const range = context.document.getSelection();
+                        range.clear();
+                        await context.sync();
+                    });
+                } catch (error) {
+                    console.error("Fejl ved sletning af markering:", error);
+                }
+            }
+        });
+    }
+
     // Inline / Dokument knapper
     const inlineCalcBtn = document.getElementById("inlineCalcBtn");
     const exactToggle = document.getElementById("exactToggle");
