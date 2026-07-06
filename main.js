@@ -63,16 +63,19 @@ document.addEventListener("DOMContentLoaded", function() {
                             parentCc.cannotEdit = false;
                             parentCc.delete(false); // false = slet både boks og indhold
                         }
-                        
-                        // Slet alle markerede bokse
-                        for (let i = 0; i < ccs.items.length; i++) {
-                            ccs.items[i].cannotDelete = false;
-                            ccs.items[i].cannotEdit = false;
-                            ccs.items[i].delete(false);
+                        // Ellers, slet fuldt markerede bokse, hvis der er nogen
+                        else if (ccs.items.length > 0) {
+                            for (let i = 0; i < ccs.items.length; i++) {
+                                ccs.items[i].cannotDelete = false;
+                                ccs.items[i].cannotEdit = false;
+                                ccs.items[i].delete(false);
+                            }
+                        }
+                        // Ellers, ryd bare markeringen (hvis det er almindelig tekst)
+                        else {
+                            range.clear();
                         }
                         
-                        // Ryd også almindelig markeret tekst
-                        range.clear();
                         await context.sync();
                     });
                 } catch (error) {
