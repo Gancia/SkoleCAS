@@ -75,7 +75,107 @@ window.CAS = {
     },
 
     /**
-     * Konverterer et brugerudtryk til LaTeX til forhåndsvisning.
+     * Formaterer et råt matematisk tekstsegment strukturelt til LaTeX
+     * uden at Nerdamer forhåndsberegner/reducerer udtrykket (så f.eks. 1/2 + 3/4 forbliver \frac{1}{2} + \frac{3}{4}).
+     */
+    formatSegmentToLatex: function(segment, decSep, isStacked) {
+        if (!segment || !segment.trim()) return "";
+        const sep = decSep || ",";
+        const stacked = isStacked !== undefined ? isStacked : true;
+
+        let s = segment.trim()
+            .replace(/[\u2212\u2013\u2014]/g, '-')
+            .replace(/[\u00B7\u22C5\u00D7]/g, '*')
+            .replace(/[\u00F7:]/g, '/')
+            .replace(/[πΠ]/g, '\\pi ')
+            .replace(/(^|[^\\])\bpi\b/gi, '$1\\pi ')
+            .replace(/⁰/g, '^{0}')
+            .replace(/¹/g, '^{1}')
+            .replace(/²/g, '^{2}')
+            .replace(/³/g, '^{3}')
+            .replace(/⁴/g, '^{4}')
+            .replace(/⁵/g, '^{5}')
+            .replace(/⁶/g, '^{6}')
+            .replace(/⁷/g, '^{7}')
+            .replace(/⁸/g, '^{8}')
+            .replace(/⁹/g, '^{9}')
+            .replace(/√\s*\(/g, 'sqrt(')
+            .replace(/√([a-zA-Z0-9.,]+)/g, '\\sqrt{$1}');
+
+        // Konvertér balancerede sqrt(...) til \sqrt{...}
+        let sqrtMatch = /\bsqrt\s*\(/i.exec(s);
+        let guard = 0;
+        while (sqrtMatch && guard < 50) {
+            guard++;
+            const startIdx = sqrtMatch.index;
+            const openParenIdx = startIdx + sqrtMatch[0].length - 1;
+            let depth = 1;
+            let i = openParenIdx + 1;
+            while (i < s.length && depth > 0) {
+                if (s[i] === '(') depth++;
+                else if (s[i] === ')') depth--;
+                i++;
+            }
+            if (depth === 0) {
+                const inner = s.substring(openParenIdx + 1, i - 1);
+                s = s.substring(0, startIdx) + `\\sqrt{${inner}}` + s.substring(i);
+            } else {
+                break;
+            }
+            sqrtMatch = /\bsqrt\s*\(/i.exec(s);
+        }
+
+        // Konvertér balancerede potenser ^(...) til ^{...}
+        let powMatch = /\^\s*\(/.exec(s);
+        guard = 0;
+        while (powMatch && guard < 50) {
+            guard++;
+            const startIdx = powMatch.index;
+            const openParenIdx = startIdx + powMatch[0].length - 1;
+            let depth = 1;
+            let i = openParenIdx + 1;
+            while (i < s.length && depth > 0) {
+                if (s[i] === '(') depth++;
+                else if (s[i] === ')') depth--;
+                i++;
+            }
+            if (depth === 0) {
+                const inner = s.substring(openParenIdx + 1, i - 1);
+                s = s.substring(0, startIdx) + `^{${inner}}` + s.substring(i);
+            } else {
+                break;
+            }
+            powMatch = /\^\s*\(/.exec(s);
+        }
+
+        // Konvertér simple potenser ^2, ^-2, ^x til ^{...}
+        s = s.replace(/\^\s*(-?[a-zA-Z0-9.,]+)/g, '^{$1}');
+
+        // Konvertér kendte funktioner til LaTeX-kommandoer
+        s = s.replace(/(^|[^\\])\b(arcsin|arccos|arctan|asin|acos|atan|sin|cos|tan|ln|log)\s*\(/gi, (m, prefix, fn) => {
+            return `${prefix}\\${fn.toLowerCase()}(`;
+        });
+
+        // Formatér brøker (1/2 -> \frac{1}{2}) uden at evaluere talværdierne
+        if (window.formatFractions) {
+            s = window.formatFractions(s, stacked);
+        }
+
+        // Erstat eksplicit multiplikation (*) med \cdot
+        s = s.replace(/\s*\*\s*/g, ' \\cdot ');
+
+        // Tilpas decimalseparator til brugerens valg
+        if (sep === ",") {
+            s = s.replace(/(\d)\.(\d)/g, '$1,$2');
+        } else {
+            s = s.replace(/(\d),(\d)/g, '$1.$2');
+        }
+
+        return s.replace(/\s{2,}/g, ' ').trim();
+    },
+
+    /**
+     * Konverterer et brugerudtryk til LaTeX til forhåndsvisning og venstreside af udregninger.
      */
     toPreviewLatex: function(rawInput, decSep, isStacked) {
         if (!rawInput || !rawInput.trim()) return "";
@@ -85,38 +185,16 @@ window.CAS = {
         const sep = decSep || ",";
         const stacked = isStacked !== undefined ? isStacked : true;
 
-        try {
-            let norm = window.normalizeInput(cleaned);
-            norm = window.convertDanishDecimalToDot(norm, sep);
-
-            if (norm.includes('=')) {
-                const parts = norm.split('=');
-                const leftRaw = parts[0].trim();
-                const rightRaw = parts.slice(1).join('=').trim();
-
-                let leftTex = leftRaw;
-                if (!/^[a-zA-Z]\s*\([a-zA-Z]\)$/.test(leftRaw)) {
-                    try { leftTex = nerdamer(leftRaw).toTeX(); } catch (e) { leftTex = leftRaw; }
-                }
-                let rightTex = rightRaw ? nerdamer(rightRaw).toTeX() : "";
-                let combined = rightRaw ? `${leftTex} = ${rightTex}` : `${leftTex} =`;
-                if (window.formatFractions) combined = window.formatFractions(combined, stacked);
-                if (sep === ",") combined = combined.replace(/(\d)\.(\d)/g, '$1,$2');
-                return combined.replace(/\\cdot\s*\\pi/g, '\\pi');
-            }
-
-            let tex = nerdamer(norm).toTeX();
-            if (window.formatFractions) tex = window.formatFractions(tex, stacked);
-            if (sep === ",") tex = tex.replace(/(\d)\.(\d)/g, '$1,$2');
-            return tex.replace(/\\cdot\s*\\pi/g, '\\pi');
-        } catch (e) {
-            let fallback = cleaned
-                .replace(/[πΠ]/g, '\\pi ')
-                .replace(/√\(([^)]*)\)/g, '\\sqrt{$1}')
-                .replace(/\*/g, ' \\cdot ');
-            if (window.formatFractions) fallback = window.formatFractions(fallback, stacked);
-            return fallback;
+        if (cleaned.includes('=')) {
+            const parts = cleaned.split('=');
+            const leftRaw = parts[0].trim();
+            const rightRaw = parts.slice(1).join('=').trim();
+            const leftTex = this.formatSegmentToLatex(leftRaw, sep, stacked);
+            const rightTex = rightRaw ? this.formatSegmentToLatex(rightRaw, sep, stacked) : "";
+            return rightRaw ? `${leftTex} = ${rightTex}` : `${leftTex} =`;
         }
+
+        return this.formatSegmentToLatex(cleaned, sep, stacked);
     },
 
     /**
@@ -136,6 +214,16 @@ window.CAS = {
 
         if (textToParse.includes('⇒')) {
             textToParse = textToParse.split('⇒')[0].trim();
+        }
+        if (textToParse.includes('≈')) {
+            textToParse = textToParse.split('≈')[0].trim();
+        }
+
+        const isFnOrYDef = /^([a-zA-Z]\s*\(\s*[a-zA-Z]\s*\)|y)\s*=/i.test(textToParse);
+        if ((actionType === 'eval' || actionType === 'approx' || actionType === 'calc') && !isFnOrYDef && textToParse.includes('=')) {
+            textToParse = textToParse.split('=')[0].trim();
+        } else if (textToParse.endsWith('=')) {
+            textToParse = textToParse.slice(0, -1).trim();
         }
 
         let mathExpr = window.normalizeInput(textToParse);
@@ -354,31 +442,37 @@ window.WordBridge = {
     /**
      * Indsætter et matematisk resultat som rigtig Word-ligning (<m:oMath>) uden låste bokse.
      */
-    insertMathInWord: async function(context, targetRange, latexToInsert, fallbackTextToInsert, wasHighlighted, originalTextToMatch) {
-        if (wasHighlighted && originalTextToMatch) {
-            try {
-                const searchResults = targetRange.search(originalTextToMatch, { matchCase: true });
-                searchResults.load("items");
-                await context.sync();
-                if (searchResults.items.length > 0) {
-                    targetRange = searchResults.items[0];
-                }
-            } catch (e) {
-                // Ignorér hvis søgetekst indeholder specialtegn
-            }
-        }
-
+    insertMathInWord: async function(context, _targetRange, latexToInsert, fallbackTextToInsert) {
         if (window.latexToOmmlString) {
             try {
+                // Hvis markeringen allerede ligger inde i en gammel Content Control, pak den ud først
+                try {
+                    const preCheckSel = context.document.getSelection();
+                    const existingParentCc = preCheckSel.parentContentControlOrNullObject;
+                    existingParentCc.load("tag");
+                    await context.sync();
+                    if (!existingParentCc.isNullObject) {
+                        existingParentCc.cannotDelete = false;
+                        existingParentCc.cannotEdit = false;
+                        existingParentCc.delete(true);
+                        await context.sync();
+                    }
+                } catch (preErr) {
+                    // Ignorér hvis der ikke er nogen eksisterende Content Control
+                }
+
                 const ommlString = window.latexToOmmlString(latexToInsert);
                 const ccTag = "MATH_TARGET_" + Date.now();
-                const cc = targetRange.insertContentControl();
+                const activeRange = context.document.getSelection();
+                const paragraph = activeRange.paragraphs.getFirst();
+
+                const cc = activeRange.insertContentControl();
                 cc.tag = ccTag;
                 cc.cannotDelete = false;
                 cc.cannotEdit = false;
                 cc.insertText("[Beregner...]", "Replace");
+                await context.sync();
 
-                const paragraph = cc.paragraphs.getFirst();
                 const pOoxml = paragraph.getOoxml();
                 await context.sync();
 
@@ -415,28 +509,39 @@ window.WordBridge = {
                     }
                 }
 
+                let isInsideOMath = false;
+                let checkParent = (sdtNode || rNode) ? (sdtNode || rNode).parentNode : null;
+                while (checkParent) {
+                    if (checkParent.nodeName === "m:oMath" || checkParent.localName === "oMath") {
+                        isInsideOMath = true;
+                        break;
+                    }
+                    checkParent = checkParent.parentNode;
+                }
+
+                const wNs = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+                let nodeToInsert = xmlDoc.createDocumentFragment();
+                if (isInsideOMath) {
+                    while (importedMathNode.firstChild) {
+                        nodeToInsert.appendChild(importedMathNode.firstChild);
+                    }
+                } else {
+                    nodeToInsert.appendChild(importedMathNode);
+                    // Tilføj et almindeligt tekst-run med mellemrum efter ligningen, så markøren kan komme ud af ligningsfeltet
+                    const trailingRun = xmlDoc.createElementNS(wNs, "w:r");
+                    const trailingText = xmlDoc.createElementNS(wNs, "w:t");
+                    trailingText.setAttribute("xml:space", "preserve");
+                    trailingText.textContent = " ";
+                    trailingRun.appendChild(trailingText);
+                    nodeToInsert.appendChild(trailingRun);
+                }
+
                 let replacedInXml = false;
                 if (sdtNode) {
-                    let sdtContent = null;
-                    for (let i = 0; i < sdtNode.childNodes.length; i++) {
-                        const child = sdtNode.childNodes[i];
-                        if (child.nodeName === "w:sdtContent" || child.localName === "sdtContent") {
-                            sdtContent = child;
-                            break;
-                        }
-                    }
-                    if (sdtContent) {
-                        while (sdtContent.firstChild) {
-                            sdtContent.removeChild(sdtContent.firstChild);
-                        }
-                        sdtContent.appendChild(importedMathNode);
-                        replacedInXml = true;
-                    } else {
-                        sdtNode.parentNode.replaceChild(importedMathNode, sdtNode);
-                        replacedInXml = true;
-                    }
+                    sdtNode.parentNode.replaceChild(nodeToInsert, sdtNode);
+                    replacedInXml = true;
                 } else if (rNode) {
-                    rNode.parentNode.replaceChild(importedMathNode, rNode);
+                    rNode.parentNode.replaceChild(nodeToInsert, rNode);
                     replacedInXml = true;
                 }
 
@@ -452,20 +557,38 @@ window.WordBridge = {
                     paragraph.insertOoxml(newOoxml, "Replace");
                     await context.sync();
 
-                    // Pak Content Control-rammen rent ud med delete(true), så ligningen aldrig låser i Word Web
-                    const remainingCcs = paragraph.contentControls;
-                    remainingCcs.load("items/tag");
-                    await context.sync();
+                    // Lås op og fjern enhver tilbageværende Content Control-ramme (bevar selve ligningen med delete(true))
+                    try {
+                        const sel = context.document.getSelection();
+                        const parentCc = sel.parentContentControlOrNullObject;
+                        parentCc.load("isNullObject");
 
-                    for (let i = 0; i < remainingCcs.items.length; i++) {
-                        const item = remainingCcs.items[i];
-                        if (!item.tag || item.tag.startsWith("MATH_TARGET_")) {
-                            item.cannotDelete = false;
-                            item.cannotEdit = false;
-                            item.delete(true);
+                        const docCcs = context.document.contentControls;
+                        docCcs.load("items/tag");
+                        await context.sync();
+
+                        if (!parentCc.isNullObject) {
+                            parentCc.cannotDelete = false;
+                            parentCc.cannotEdit = false;
+                            parentCc.delete(true);
                         }
+
+                        for (let i = 0; i < docCcs.items.length; i++) {
+                            const item = docCcs.items[i];
+                            if (!item.tag || item.tag.startsWith("MATH_TARGET_")) {
+                                item.cannotDelete = false;
+                                item.cannotEdit = false;
+                                item.delete(true);
+                            }
+                        }
+                        await context.sync();
+
+                        const afterRange = context.document.getSelection().getRange("End");
+                        afterRange.select();
+                        await context.sync();
+                    } catch (unwrapErr) {
+                        console.warn("Kunne ikke pakke Content Control ud efter indsættelse:", unwrapErr);
                     }
-                    await context.sync();
                     return;
                 }
             } catch (ooxmlErr) {
@@ -473,7 +596,8 @@ window.WordBridge = {
             }
         }
 
-        targetRange.insertText(fallbackTextToInsert, "Replace");
+        const fallbackRange = context.document.getSelection();
+        fallbackRange.insertText(fallbackTextToInsert, "Replace");
         await context.sync();
     }
 };
@@ -752,27 +876,27 @@ window.calculateInline = async function(actionType) {
             let sourceMode = "panel";
             let exprToCalculate = panelText;
 
-            if (wordData.sourceMode === "word-highlight" && wordData.expr) {
+            if (panelInputDirty && panelText) {
+                sourceMode = "panel";
+                exprToCalculate = panelText;
+            } else if (wordData.sourceMode === "word-highlight" && wordData.expr) {
                 sourceMode = "word-highlight";
                 exprToCalculate = wordData.expr;
-            } else if (panelInputDirty && panelText) {
+            } else if (panelText) {
                 sourceMode = "panel";
                 exprToCalculate = panelText;
             } else if (wordData.sourceMode === "word-line" && wordData.expr) {
                 sourceMode = "word-line";
                 exprToCalculate = wordData.expr;
-            } else if (panelText) {
-                sourceMode = "panel";
-                exprToCalculate = panelText;
             } else {
                 throw new Error("Skriv et udtryk i feltet eller markér en ligning i Word først.");
             }
+            panelInputDirty = false;
 
             if (inputEl && inputEl.value.trim() !== exprToCalculate) {
                 inputEl.value = exprToCalculate;
-                window.updateMathPreview();
             }
-            panelInputDirty = false;
+            window.updateMathPreview();
 
             const calcObj = window.CAS.execute(exprToCalculate, actionType, opts);
             renderResultInPanel(calcObj);
@@ -782,19 +906,20 @@ window.calculateInline = async function(actionType) {
                     context,
                     selection,
                     calcObj.fullLatex,
-                    calcObj.fullFallbackText,
-                    Boolean(wordData.rawHighlightedText),
-                    wordData.rawHighlightedText
+                    calcObj.fullFallbackText
                 );
                 await window.ensureFooter(context);
             } else if (sourceMode === "word-line") {
+                const lineParagraph = context.document.getSelection().paragraphs.getFirst();
+                const lineRange = lineParagraph.getRange("Content");
+                lineRange.select();
+                await context.sync();
+
                 await window.WordBridge.insertMathInWord(
                     context,
-                    selection,
-                    calcObj.answerOnlyLatex,
-                    " " + calcObj.fallbackText,
-                    false,
-                    ""
+                    lineRange,
+                    calcObj.fullLatex,
+                    calcObj.fullFallbackText
                 );
                 await window.ensureFooter(context);
             } else if (sourceMode === "panel" && autoInsert) {
@@ -802,9 +927,7 @@ window.calculateInline = async function(actionType) {
                     context,
                     selection,
                     calcObj.fullLatex,
-                    calcObj.fullFallbackText,
-                    false,
-                    ""
+                    calcObj.fullFallbackText
                 );
                 await window.ensureFooter(context);
             }

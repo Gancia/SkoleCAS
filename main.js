@@ -52,11 +52,9 @@ window.insertSymbol = async function(symbol) {
 
     const inputEl = document.getElementById("mathInput");
 
-    // Hvis panelets inputfelt er i fokus, eller hvis vi ikke kører inde i Word:
-    // indsæt symbolet direkte i inputfeltet ved markørens position.
-    if (inputEl && (document.activeElement === inputEl || lastFocusedPanelInput === inputEl || !window.isOfficeReady || !window.Word)) {
-        const start = inputEl.selectionStart ?? inputEl.value.length;
-        const end = inputEl.selectionEnd ?? inputEl.value.length;
+    if (inputEl) {
+        const start = typeof inputEl.selectionStart === "number" ? inputEl.selectionStart : inputEl.value.length;
+        const end = typeof inputEl.selectionEnd === "number" ? inputEl.selectionEnd : inputEl.value.length;
         const val = inputEl.value;
         inputEl.value = val.slice(0, start) + symbol + val.slice(end);
 
@@ -66,17 +64,6 @@ window.insertSymbol = async function(symbol) {
         inputEl.setSelectionRange(newPos, newPos);
         inputEl.dispatchEvent(new Event("input", { bubbles: true }));
         return;
-    }
-
-    try {
-        await Word.run(async (context) => {
-            const range = context.document.getSelection();
-            range.insertText(symbol, "End");
-            await context.sync();
-        });
-    } catch (error) {
-        console.error("Fejl ved indsæt symbol:", error);
-        if (errorBox) errorBox.textContent = "Kunne ikke indsætte symbol i Word.";
     }
 };
 

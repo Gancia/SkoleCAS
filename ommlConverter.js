@@ -624,7 +624,21 @@ window.formatFractions = function(fullLatex, isStacked) {
                 leftStart++;
                 num = result.substring(leftStart + 1, index - 1);
             } else {
-                while (leftStart >= 0 && /[a-zA-Z0-9_.,\\{}]/.test(result[leftStart])) leftStart--;
+                while (leftStart >= 0) {
+                    if (result[leftStart] === '}') {
+                        let braceDepth = 1;
+                        leftStart--;
+                        while (leftStart >= 0 && braceDepth > 0) {
+                            if (result[leftStart] === '}') braceDepth++;
+                            else if (result[leftStart] === '{') braceDepth--;
+                            leftStart--;
+                        }
+                    } else if (/[a-zA-Z0-9_.,\\^]/.test(result[leftStart])) {
+                        leftStart--;
+                    } else {
+                        break;
+                    }
+                }
                 leftStart++;
                 num = result.substring(leftStart, index);
             }
@@ -642,7 +656,21 @@ window.formatFractions = function(fullLatex, isStacked) {
                 rightEnd--;
                 den = result.substring(index + 2, rightEnd);
             } else {
-                while (rightEnd < result.length && /[a-zA-Z0-9_.,\\{}]/.test(result[rightEnd])) rightEnd++;
+                while (rightEnd < result.length) {
+                    if (result[rightEnd] === '{') {
+                        let braceDepth = 1;
+                        rightEnd++;
+                        while (rightEnd < result.length && braceDepth > 0) {
+                            if (result[rightEnd] === '{') braceDepth++;
+                            else if (result[rightEnd] === '}') braceDepth--;
+                            rightEnd++;
+                        }
+                    } else if (/[a-zA-Z0-9_.,\\^]/.test(result[rightEnd])) {
+                        rightEnd++;
+                    } else {
+                        break;
+                    }
+                }
                 rightEnd--;
                 den = result.substring(index + 1, rightEnd + 1);
             }
