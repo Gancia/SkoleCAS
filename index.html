@@ -1,122 +1,200 @@
 <!DOCTYPE html>
-<html lang="da">
+<html lang="da" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Skole CAS</title>
+    <title>SkoleCAS</title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
     <!-- Office JavaScript API -->
-    <script type="text/javascript" src="https://appsforoffice.microsoft.com/lib/1.1/hosted/office.js"></script>
-    
-    <!-- Nerdamer CAS (v1.1.13 — stabil CDN-version der eksponerer window.nerdamer korrekt)
-         nerdamer-prime@1.4.0 loader ikke korrekt som global via <script src> -->
-    <script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/nerdamer.core.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/Algebra.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/Calculus.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/Solve.js"></script>
-    
-    <!-- KaTeX for MathML generation -->
+    <script defer src="https://appsforoffice.microsoft.com/lib/1.1/hosted/office.js"></script>
+
+    <!-- Nerdamer CAS -->
+    <script defer src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/nerdamer.core.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/Algebra.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/Calculus.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/Solve.js"></script>
+
+    <!-- KaTeX for MathML & HTML preview -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
 
-    <!-- GeoGebra API -->
-    <script src="https://cdn.geogebra.org/apps/deployggb.js"></script>
-
-    <!-- Chart.js & Statistics -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@sgratzl/chartjs-chart-boxplot@4"></script>
-    <script src="https://cdn.jsdelivr.net/npm/simple-statistics@7.8.2/dist/simple-statistics.min.js"></script>
-
-
     <link rel="stylesheet" href="taskpane.css">
-    
-    <script>
-        // Tema logik
-        function toggleTheme() {
-            const currentTheme = document.documentElement.getAttribute("data-theme");
-            const newTheme = currentTheme === "dark" ? "light" : "dark";
-            document.documentElement.setAttribute("data-theme", newTheme);
-            localStorage.setItem("theme", newTheme);
-            document.getElementById("themeToggle").textContent = newTheme === "dark" ? "☀️" : "🌙";
-        }
-        
-        // Sæt gemt tema ved indlæsning
-        document.addEventListener("DOMContentLoaded", () => {
-            const savedTheme = localStorage.getItem("theme");
-            if (savedTheme) {
-                document.documentElement.setAttribute("data-theme", savedTheme);
-                document.getElementById("themeToggle").textContent = savedTheme === "dark" ? "☀️" : "🌙";
-            }
-            document.getElementById("themeToggle").addEventListener("click", toggleTheme);
-        });
-    </script>
 </head>
 <body>
     <div class="container">
-        
-        <div class="header">
+        <!-- Header -->
+        <header class="header">
             <div class="header-left">
                 <h2>SkoleCAS</h2>
-                <button id="themeToggle" class="theme-toggle" title="Skift tema">🌙</button>
+                <button type="button" id="themeToggle" class="theme-toggle" title="Skift tema" aria-label="Skift tema">
+                    <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
             </div>
-            <div class="header-right" style="display: flex; gap: 8px;">
-                <button id="deleteMathBtn" class="link-btn delete-btn" title="Slet markering (bruges hvis en boks har låst sig fast)">🗑️ Slet</button>
-                <a href="https://uvm.dk/media/1o5jnsla/200310-matematiske-formler-og-fagord-matematik-2-udgave-2017.pdf" target="_blank" class="link-btn" title="Åbn formelsamling i browser">📚 Formler</a>
+            <div class="header-right">
+                <button type="button" id="deleteMathBtn" class="link-btn delete-btn" title="Ryd markering eller låst felt i Word">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M3 6h18"></path>
+                        <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
+                    </svg>
+                    <span>Ryd felt</span>
+                </button>
+                <a href="https://uvm.dk/media/1o5jnsla/200310-matematiske-formler-og-fagord-matematik-2-udgave-2017.pdf"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   class="link-btn"
+                   title="Åbn UVM formelsamling i browser">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                    </svg>
+                    <span>Formelsamling</span>
+                </a>
             </div>
-        </div>
-        
-        <!-- Faneblad Navigation -->
-        <div class="tabs">
-            <button id="tabBtn-lommeregner" class="tab-btn active" data-tab="lommeregner">🧮 Beregner</button>
-            <button id="tabBtn-trekant" class="tab-btn" data-tab="trekant">📐 Trekant</button>
-            <button id="tabBtn-kladde" class="tab-btn" data-tab="kladde">📓 Kladde</button>
-            <button id="tabBtn-graf" class="tab-btn" data-tab="graf">📈 Graf</button>
-            <button id="tabBtn-statistik" class="tab-btn" data-tab="statistik">📊 Statistik</button>
-            <button id="tabBtn-regression" class="tab-btn" data-tab="regression">📉 Regression</button>
+        </header>
+
+        <!-- Faneblade -->
+        <div class="tabs" role="tablist" aria-label="Værktøjer">
+            <button type="button" id="tabBtn-lommeregner" class="tab-btn active" role="tab" aria-selected="true" aria-controls="tab-lommeregner" data-tab="lommeregner">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="4" y="2" width="16" height="20" rx="2"></rect>
+                    <line x1="8" y1="6" x2="16" y2="6"></line>
+                    <line x1="8" y1="11" x2="10" y2="11"></line>
+                    <line x1="14" y1="11" x2="16" y2="11"></line>
+                    <line x1="8" y1="15" x2="10" y2="15"></line>
+                    <line x1="14" y1="15" x2="16" y2="15"></line>
+                    <line x1="8" y1="19" x2="16" y2="19"></line>
+                </svg>
+                <span>Beregner</span>
+            </button>
+            <button type="button" id="tabBtn-trekant" class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-trekant" data-tab="trekant">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M3 20h18L12 4Z"></path>
+                </svg>
+                <span>Trekant</span>
+            </button>
         </div>
 
-        <!-- TAB: LOMMEREGNER -->
-        <div id="tab-lommeregner" class="tab-content active">
+        <!-- FANE 1: BEREGNER & LIGNINGSLØSER -->
+        <section id="tab-lommeregner" class="tab-content active" role="tabpanel" aria-labelledby="tabBtn-lommeregner">
             <div class="card">
-                <h3>Beregner</h3>
+                <div class="card-header-row">
+                    <h3>Beregner og ligningsløser</h3>
+                    <button type="button" id="fetchFromWordBtn" class="text-action-btn" title="Hent markeret tekst fra Word ind i feltet">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        <span>Hent fra Word</span>
+                    </button>
+                </div>
+
                 <div class="instruction-box">
-                    <strong>Brug:</strong> Markér ligningen i Word og vælg en handling.
+                    Markér et udtryk direkte i Word <em>eller</em> skriv det i feltet herunder, og vælg en handling.
                 </div>
-                
-                <div class="btn-group">
-                    <button id="inlineCalcBtn" class="primary-btn" title="Udregn resultat">Udregn (=)</button>
-                    <button id="inlineSolveBtn" class="secondary-btn" title="Løs ligning for x">Løs (⇒)</button>
-                </div>
-                
-                <div class="btn-group" style="margin-bottom: 12px;">
-                    <button id="inlineDiffBtn" class="secondary-btn" title="Differentier mht. x">Diff. (f')</button>
-                    <button id="inlineIntBtn" class="primary-btn" title="Ubestemt integral af markeret udtryk">∫ Integrer</button>
-                </div>
-                
-                <div style="margin-bottom: 12px;">
-                    <p class="small-text" style="margin-bottom: 6px;">Indsæt symbol ved markøren:</p>
-                    <div class="symbol-buttons">
-                        <button onclick="window.insertSymbol('π')" class="secondary-btn" title="Indsæt pi-tegnet (π ≈ 3,14159...)">π</button>
-                        <button onclick="window.insertSymbol('√()')" class="secondary-btn" title="Indsæt kvadratrod-tegnet">√</button>
-                        <button onclick="window.insertSymbol('e')" class="secondary-btn" title="Indsæt Eulers tal (e ≈ 2,71828...)">e</button>
-                        <button onclick="window.insertSymbol('^2')" class="secondary-btn" title="Indsæt anden potens">x²</button>
+
+                <!-- Matematik-input med live forhåndsvisning -->
+                <div class="math-workspace">
+                    <div class="math-input-header">
+                        <label for="mathInput" class="field-label">Matematisk udtryk</label>
+                        <button type="button" id="clearMathInputBtn" class="clear-input-btn" title="Ryd udtryk">Ryd</button>
+                    </div>
+                    <input type="text"
+                           id="mathInput"
+                           class="math-text-input"
+                           placeholder="F.eks. 2x + 5 = 15 eller (x+1)/2"
+                           autocomplete="off"
+                           spellcheck="false">
+
+                    <div id="mathPreview" class="math-preview-box" aria-live="polite">
+                        <span class="preview-placeholder">Forhåndsvisning vises her, mens du skriver...</span>
                     </div>
                 </div>
 
+                <!-- Hurtige symbolknapper -->
+                <div class="symbol-bar">
+                    <button type="button" data-symbol="π" class="secondary-btn symbol-btn" title="Indsæt pi">π</button>
+                    <button type="button" data-symbol="√()" class="secondary-btn symbol-btn" title="Indsæt kvadratrod">√(x)</button>
+                    <button type="button" data-symbol="^2" class="secondary-btn symbol-btn" title="Indsæt anden potens">x²</button>
+                    <button type="button" data-symbol="^" class="secondary-btn symbol-btn" title="Indsæt potens">xⁿ</button>
+                    <button type="button" data-symbol="e" class="secondary-btn symbol-btn" title="Indsæt Eulers tal e">e</button>
+                </div>
+
+                <!-- Primære CAS-handlinger -->
+                <div class="btn-group">
+                    <button type="button" id="inlineCalcBtn" class="primary-btn" title="Beregn udtryk">Udregn (=)</button>
+                    <button type="button" id="inlineSolveBtn" class="primary-btn" title="Løs ligning">Løs (⇒)</button>
+                </div>
+
+                <div class="btn-group">
+                    <button type="button" id="inlineDiffBtn" class="secondary-btn" title="Differentier udtryk">Differentier (f')</button>
+                    <button type="button" id="inlineIntBtn" class="secondary-btn" title="Integrer udtryk">Integrer (∫)</button>
+                </div>
+
+                <button type="button" id="openGeoGebraBtn" class="secondary-btn full-width-btn ggb-launch-btn" title="Kopiér udtryk i GeoGebra-format og åbn GeoGebra Online">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M3 3v18h18"></path>
+                        <path d="M7 16c2.5-6 5.5-6 8 0s5-6 5-9"></path>
+                    </svg>
+                    <span>Åbn i GeoGebra Online</span>
+                </button>
+                <div id="ggbCopyNotice" class="ggb-copy-notice hidden" role="status"></div>
+
+                <div id="inlineError" class="error-text" role="alert"></div>
+
+                <!-- Seneste resultat -->
+                <div id="calcResultCard" class="result-card hidden" aria-live="polite">
+                    <div class="result-card-header">
+                        <span class="result-card-label">Resultat</span>
+                        <button type="button" id="insertResultToWordBtn" class="secondary-btn insert-word-btn" disabled>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M5 12h14"></path>
+                                <path d="m12 5 7 7-7 7"></path>
+                            </svg>
+                            <span>Indsæt i Word</span>
+                        </button>
+                    </div>
+                    <div id="calcResultMath" class="result-math-display"></div>
+                </div>
+
+                <!-- Indstillinger -->
                 <details class="settings-details">
                     <summary>Indstillinger for udregning</summary>
-                    <div class="options-container" style="margin-top: 8px;">
-                        <label style="margin-bottom: 8px;">
+                    <div class="options-container">
+                        <label class="option-row">
                             <input type="checkbox" id="exactToggle">
-                            <span>Eksakt resultat (brøker, π)</span>
+                            <span>Eksakt resultat (bevar brøker, π og rødder)</span>
                         </label>
-                        <label style="margin-bottom: 8px;">
+                        <label class="option-row">
                             <input type="checkbox" id="stackedFractionToggle" checked>
                             <span>Vis brøker stablet (lodret)</span>
                         </label>
-                        <div id="decimalOptions" style="display: flex; align-items: center; margin-left: 24px; margin-bottom: 8px;">
-                            <!-- A5: label for= forbinder teksten til kontrolelementet (accessibility) -->
-                            <label for="decimalSelect" style="margin-right: 8px;">Afrund til:</label>
-                            <select id="decimalSelect" aria-label="Vælg antal decimaler">
+                        <label class="option-row">
+                            <input type="checkbox" id="autoInsertToggle" checked>
+                            <span>Indsæt automatisk i Word ved beregning</span>
+                        </label>
+                        <div id="decimalOptions" class="option-select-row">
+                            <label for="decimalSelect">Afrund til:</label>
+                            <select id="decimalSelect">
                                 <option value="0">0 decimaler</option>
                                 <option value="1">1 decimal</option>
                                 <option value="2" selected>2 decimaler</option>
@@ -125,10 +203,9 @@
                                 <option value="5">5 decimaler</option>
                             </select>
                         </div>
-                        <div style="display: flex; align-items: center;">
-                            <!-- A5: label for= forbinder teksten til kontrolelementet (accessibility) -->
-                            <label for="decimalSeparator" style="margin-right: 8px;">Decimalseparator:</label>
-                            <select id="decimalSeparator" aria-label="Vælg decimalseparator">
+                        <div class="option-select-row">
+                            <label for="decimalSeparator">Decimalseparator:</label>
+                            <select id="decimalSeparator">
                                 <option value="," selected>Komma (,)</option>
                                 <option value=".">Punktum (.)</option>
                             </select>
@@ -136,167 +213,94 @@
                     </div>
                 </details>
 
-                <div id="inlineError" class="error-text"></div>
-            </div>
-        </div>
+                <!-- GeoGebra-hjælp til eleverne -->
+                <details class="settings-details">
+                    <summary>Hjælp til GeoGebra Online</summary>
+                    <div class="options-container ggb-help-box">
+                        <p class="ggb-help-intro">
+                            Når du klikker <strong>Åbn i GeoGebra Online</strong>, omskrives din funktion automatisk fra dansk komma til punktum og kopieres, så du blot kan trykke <code>Ctrl+V</code> i GeoGebra.
+                        </p>
+                        <div class="ggb-cmd-list">
+                            <div class="ggb-cmd-row"><span>Skæringspunkt:</span><code>Skæring(f, g)</code></div>
+                            <div class="ggb-cmd-row"><span>Nulpunkter (rødder):</span><code>Rod(f)</code></div>
+                            <div class="ggb-cmd-row"><span>Toppunkt / ekstremum:</span><code>Ekstremum(f)</code></div>
+                            <div class="ggb-cmd-row"><span>Tangent i x = a:</span><code>Tangent(a, f)</code></div>
+                            <div class="ggb-cmd-row"><span>Bestemt integral:</span><code>Integral(f, a, b)</code></div>
+                        </div>
+                        <p class="ggb-help-footer">
+                            <strong>Få grafen ind i Word:</strong> Klik på menuen øverst til venstre i GeoGebra &rarr; <em>Eksportér billede</em> &rarr; <em>Kopiér til udklipsholder</em>, og sæt ind i Word med <code>Ctrl+V</code>.
+                        </p>
+                    </div>
+                </details>
 
-        <!-- TAB: TREKANT -->
-        <div id="tab-trekant" class="tab-content">
+                <!-- Historik i sessionen -->
+                <div id="calcHistorySection" class="history-section hidden">
+                    <div class="history-header">Seneste udregninger</div>
+                    <div id="calcHistoryList" class="history-list"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- FANE 2: TREKANTSBEREGNER -->
+        <section id="tab-trekant" class="tab-content" role="tabpanel" aria-labelledby="tabBtn-trekant" hidden>
             <div class="card">
-                <h3>Trekantsberegner</h3>
-                <p class="small-text">Indtast præcis <strong>3 kendte værdier</strong> (sider eller vinkler). Vinkler måles i grader.</p>
-                
+                <div class="card-header-row">
+                    <h3>Trekantsberegner</h3>
+                    <button type="button" id="resetTriangleBtn" class="text-action-btn" title="Nulstil alle felter">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                            <path d="M3 3v5h5"></path>
+                        </svg>
+                        <span>Nulstil</span>
+                    </button>
+                </div>
+                <p class="small-text">Indtast præcis <strong>3 kendte værdier</strong> (sider og/eller vinkler i grader).</p>
+
                 <div class="triangle-grid">
-                    <div class="triangle-input-wrapper"><label>a</label><input type="number" id="tri_a" placeholder="..."></div>
-                    <div class="triangle-input-wrapper"><label>A</label><input type="number" id="tri_A" placeholder="°"></div>
-                    <div class="triangle-input-wrapper"><label>b</label><input type="number" id="tri_b" placeholder="..."></div>
-                    <div class="triangle-input-wrapper"><label>B</label><input type="number" id="tri_B" placeholder="°"></div>
-                    <div class="triangle-input-wrapper"><label>c</label><input type="number" id="tri_c" placeholder="..."></div>
-                    <div class="triangle-input-wrapper"><label>C</label><input type="number" id="tri_C" placeholder="°"></div>
-                </div>
-                <button id="solveTriangleBtn" class="primary-btn">Beregn Trekant</button>
-                <div id="triError" class="error-text"></div>
-            </div>
-        </div>
-        
-        <!-- TAB: KLADDE -->
-        <div id="tab-kladde" class="tab-content">
-            <div class="card">
-                <h3>Kladdehæftet</h3>
-                <p class="small-text">Brug kladden til at eksperimentere uden at det skrives i Word-dokumentet med det samme.</p>
-                
-                <!-- A6: label forbinder beskrivelsen til textareaet for screen readers -->
-                <label for="expression" class="small-text" style="display:block; margin-bottom: 4px;">Skriv eller indsæt et matematisk udtryk:</label>
-                <textarea id="expression" placeholder="F.eks. 2*x + 5 = 15" aria-label="Matematisk udtryk til kladdehæftet"></textarea>
-                <button id="calculateBtn" class="primary-btn" style="margin-bottom: 12px;">Beregn</button>
-                
-                <div id="resultContainer" class="result-box" aria-live="polite" aria-label="Beregningsresultat"></div>
-                
-                <!-- A9: title forklarer hvad der skal til for at aktivere knappen -->
-                <button id="insertBtn" class="secondary-btn" style="margin-top: 12px;" disabled
-                        title="Beregn et udtryk først for at aktivere denne knap">Overfør til Word</button>
-            </div>
-        </div>
+                    <div class="triangle-col-header">Sider</div>
+                    <div class="triangle-col-header">Vinkler (°)</div>
 
-        <!-- TAB: GRAF -->
-        <div id="tab-graf" class="tab-content">
-            <div class="card">
-                <h3>GeoGebra Graftegner</h3>
-                <p class="small-text">Tegn funktioner interaktivt og indsæt grafen direkte i Word.</p>
-                <div class="btn-group" style="margin-bottom: 0;">
-                    <button id="ggbLoadEquationBtn" class="secondary-btn" title="Hent markeret ligning fra Word til graftegneren">📄 Hent fra Word</button>
-                    <button id="ggbOpenModalBtn" class="primary-btn" title="Åbn graftegneren i fuldsærm">📈 Åbn graftegner</button>
-                </div>
-            </div>
-        </div>
+                    <div class="triangle-input-wrapper">
+                        <label for="tri_a">a</label>
+                        <input type="text" inputmode="decimal" id="tri_a" placeholder="Side a" autocomplete="off">
+                    </div>
+                    <div class="triangle-input-wrapper">
+                        <label for="tri_A">A</label>
+                        <input type="text" inputmode="decimal" id="tri_A" placeholder="Vinkel A" autocomplete="off">
+                    </div>
 
-        <!-- TAB: STATISTIK -->
-        <div id="tab-statistik" class="tab-content">
-            <div class="card">
-                <h3>Statistik & Boksplot</h3>
-                <!-- A6: label forbinder beskrivelsen til textareaet -->
-                <label for="statInput" class="small-text" style="display:block; margin-bottom: 4px;">Indsæt data herunder (kopier f.eks. fra Excel):</label>
-                <textarea id="statInput" placeholder="12, 14, 15, 12, ... eller med linjeskift" rows="4"
-                          aria-label="Statistikdata til beregning"></textarea>
-                
-                <div class="btn-group" style="margin-top: 12px; margin-bottom: 8px;">
-                    <button id="statUngroupedBtn" class="primary-btn">Beregn Ugrupperet</button>
-                    <button id="statGroupedBtn" class="secondary-btn">Beregn Grupperet</button>
-                </div>
-                <p class="small-text" style="margin-bottom: 12px; font-style: italic;">
-                    <strong>Ugrupperet:</strong> ét tal pr. linje eller adskilt med komma.<br>
-                    <strong>Grupperet:</strong> midtpunkt og frekvens pr. linje, f.eks. <code>15 4</code><br>
-                    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(eller start, slut, frekvens: <code>10 20 4</code>)
-                </p>
+                    <div class="triangle-input-wrapper">
+                        <label for="tri_b">b</label>
+                        <input type="text" inputmode="decimal" id="tri_b" placeholder="Side b" autocomplete="off">
+                    </div>
+                    <div class="triangle-input-wrapper">
+                        <label for="tri_B">B</label>
+                        <input type="text" inputmode="decimal" id="tri_B" placeholder="Vinkel B" autocomplete="off">
+                    </div>
 
-                <canvas id="statChart" style="display:none;"></canvas>
-                <div id="statError" class="error-text"></div>
-            </div>
-        </div>
-
-        <!-- TAB: REGRESSION -->
-        <div id="tab-regression" class="tab-content">
-            <div class="card">
-                <h3>Regression</h3>
-                <!-- A6: label til regression-textareaet -->
-                <label for="regInput" class="small-text" style="display:block; margin-bottom: 4px;">Indsæt to kolonner fra Excel (x- og y-værdier):</label>
-                <textarea id="regInput" placeholder="Sæt to kolonner ind fra Excel (x og y)" rows="6"
-                          aria-label="Regressions-data: x og y værdier"></textarea>
-                
-                <div style="margin-top: 12px; margin-bottom: 12px;">
-                    <label for="regType">Type: </label>
-                    <select id="regType">
-                        <option value="Lineær">Lineær</option>
-                        <option value="Eksponentiel">Eksponentiel</option>
-                        <option value="Potens">Potens</option>
-                        <option value="Polynomium">Polynomium (2. grad)</option>
-                    </select>
+                    <div class="triangle-input-wrapper">
+                        <label for="tri_c">c</label>
+                        <input type="text" inputmode="decimal" id="tri_c" placeholder="Side c" autocomplete="off">
+                    </div>
+                    <div class="triangle-input-wrapper">
+                        <label for="tri_C">C</label>
+                        <input type="text" inputmode="decimal" id="tri_C" placeholder="Vinkel C" autocomplete="off">
+                    </div>
                 </div>
-                
-                <button id="regCalcBtn" class="primary-btn">Beregn Regression</button>
-                <div id="regError" class="error-text"></div>
+
+                <button type="button" id="solveTriangleBtn" class="primary-btn full-width-btn">Beregn trekant</button>
+                <div id="triError" class="error-text" role="alert"></div>
+
+                <!-- Visuelt resultat og SVG-trekant -->
+                <div id="triResultContainer" class="tri-result-container hidden" aria-live="polite"></div>
             </div>
-        </div>
-        
+        </section>
     </div>
 
-    <!-- ============================================
-         GEOGEBRA MODAL OVERLAY
-         Vises oven på hele taskpane-vinduet når
-         brugeren klikker "Åbn graftegner".
-         GeoGebra-elementet bor her så det aldrig
-         renders i en skjult tab (display:none).
-         ============================================ -->
-    <!-- ARIA: role=dialog sikrer at screen readers annoncerer modalen korrekt.
-         aria-modal=true forhindrer screen readers i at læse bagvedliggende indhold.
-         aria-label giver modalen et tilgængeligt navn. -->
-    <div id="ggbModal" class="ggb-modal"
-         role="dialog"
-         aria-modal="true"
-         aria-label="GeoGebra Graftegner">
-        <div class="ggb-modal-header">
-            <span class="ggb-modal-title">&#128200; GeoGebra Graftegner</span>
-            <div class="ggb-modal-actions">
-                <button id="ggbModalLoadBtn" class="secondary-btn" title="Hent markeret ligning fra Word">&#128196; Hent fra Word</button>
-                <button id="ggbInsertBtn" class="primary-btn" title="Indsæt grafbillede i Word">&#8595; Indsæt i Word</button>
-                <button id="ggbCloseModalBtn" class="secondary-btn" title="Luk graftegneren">&#x2715; Luk</button>
-            </div>
-        </div>
-        <div class="ggb-modal-body">
-            <!-- A7: Loading-pladsholder vises mens GeoGebra starter.
-                 Den erstattes af GeoGebra-iframe'en når applet'en er indlæst.
-                 graphing.js sætter #ggb-element's indhold via GGBApplet.inject(). -->
-            <div id="ggb-element">
-                <div id="ggbLoadingPlaceholder" style="
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    justify-content: center;
-                    height: 100%;
-                    gap: 16px;
-                    color: var(--text-muted);
-                    font-size: 14px;
-                ">
-                    <svg width="48" height="48" viewBox="0 0 48 48" fill="none" style="animation: spin 1.2s linear infinite;">
-                        <circle cx="24" cy="24" r="20" stroke="var(--card-border)" stroke-width="4"/>
-                        <path d="M24 4 a20 20 0 0 1 20 20" stroke="var(--primary)" stroke-width="4" stroke-linecap="round"/>
-                    </svg>
-                    <span>GeoGebra starter…</span>
-                </div>
-            </div>
-        </div>
-        <div class="ggb-modal-status" id="ggbModalStatus">Starter GeoGebra — vent et øjeblik…</div>
-    </div>
-
-    <!-- utils.js indlæses først så safeRound, normalizeInput og formatNumber
-         er tilgængelige for alle efterfølgende moduler -->
-    <script defer src="utils.js?v=47"></script>
-    <script defer src="ommlConverter.js?v=47"></script>
-    <script defer src="graphing.js?v=47"></script>
-    <script defer src="trigonometry.js?v=47"></script>
-    <script defer src="mathEngine.js?v=47"></script>
-    <script defer src="main.js?v=47"></script>
-    <script defer src="statistics.js?v=47"></script>
-    <script defer src="regression.js?v=47"></script>
+    <script defer src="utils.js"></script>
+    <script defer src="ommlConverter.js"></script>
+    <script defer src="trigonometry.js"></script>
+    <script defer src="mathEngine.js"></script>
+    <script defer src="main.js"></script>
 </body>
 </html>

@@ -1,10 +1,705 @@
-// ==========================================
-// INLINE FUNKTIONER (Dokument-integration) & KLADDEHÆFTE
-// ==========================================
-window.calculateInline = async function(actionType) {
-    // C1: null-check på errorBox så vi ikke crasher hvis elementet mangler
+// ============================================================================
+// SkoleCAS Kerne:
+//  1. window.CAS           – Udskiftelig CAS-adapter (eval, solve, diff, int)
+//  2. window.WordBridge    – To-vejs bro til Word (læser OG skriver <m:oMath> OMML)
+//  3. window.GeoGebraBridge– Lazy-loaded GeoGebra-graftegner & ekstern bro
+// ============================================================================
+
+window.calculationHistory = [];
+window.lastCalculation = null;
+let panelInputDirty = false;
+
+// ─────────────────────────────────────────────────────────────────
+//  1. CAS-ADAPTER (Isoleret beregningslag)
+// ─────────────────────────────────────────────────────────────────
+
+function detectMainVariable(mathExpr) {
+    try {
+        const exprForVars = mathExpr.includes('=') ? mathExpr.split('=')[0] : mathExpr;
+        const vars = nerdamer(exprForVars).variables();
+        if (Array.isArray(vars) && vars.length > 0) {
+            if (vars.includes('x')) return 'x';
+            return vars[0];
+        }
+    } catch (e) {
+        // Fallback nedenfor
+    }
+
+    const fnNames = [
+        'arcsin', 'arccos', 'arctan', 'sinh', 'cosh', 'tanh',
+        'asin', 'acos', 'atan', 'sqrt', 'sin', 'cos', 'tan',
+        'cot', 'sec', 'csc', 'log', 'exp', 'abs', 'pi', 'ln'
+    ];
+    let cleaned = mathExpr;
+    for (const fn of fnNames) {
+        cleaned = cleaned.replace(new RegExp('\\b' + fn + '\\b', 'gi'), '');
+    }
+    const matches = cleaned.match(/[a-zA-Z]/g) || [];
+    if (matches.includes('x')) return 'x';
+    return matches.length > 0 ? matches[0] : 'x';
+}
+
+function roundNumbersInString(str, decimals) {
+    let wasRounded = false;
+    const roundedStr = str.replace(/-?\d+\.\d+/g, function(match) {
+        const originalNum = parseFloat(match);
+        if (!Number.isFinite(originalNum)) return match;
+        const roundedNum = window.safeRound(originalNum, decimals);
+        if (Math.abs(originalNum - roundedNum) > 1e-12 || /\.\d{7,}/.test(match)) {
+            wasRounded = true;
+        }
+        let formatted = roundedNum.toFixed(decimals)
+            .replace(/(\.\d*[1-9])0+$/, '$1')
+            .replace(/\.0*$/, '');
+        if (formatted === '-0') formatted = '0';
+        return formatted;
+    });
+    return { text: roundedStr, wasRounded };
+}
+
+window.CAS = {
+    detectVariable: detectMainVariable,
+
+    /**
+     * Konverterer et råt udtryk til GeoGebra-kompatibel syntaks.
+     */
+    toGeoGebraSyntax: function(rawInput) {
+        if (!rawInput) return "";
+        let s = String(rawInput).trim();
+        if (s.includes('⇒')) s = s.split('⇒')[0].trim();
+        if (s.includes('≈')) s = s.split('≈')[0].trim();
+        s = window.normalizeInput(s);
+        s = window.convertDanishDecimalToDot(s, ",");
+        if (s.endsWith('=')) s = s.slice(0, -1).trim();
+        return s;
+    },
+
+    /**
+     * Konverterer et brugerudtryk til LaTeX til forhåndsvisning.
+     */
+    toPreviewLatex: function(rawInput, decSep, isStacked) {
+        if (!rawInput || !rawInput.trim()) return "";
+        let cleaned = rawInput.trim();
+        if (cleaned.includes('⇒')) cleaned = cleaned.split('⇒')[0].trim();
+
+        const sep = decSep || ",";
+        const stacked = isStacked !== undefined ? isStacked : true;
+
+        try {
+            let norm = window.normalizeInput(cleaned);
+            norm = window.convertDanishDecimalToDot(norm, sep);
+
+            if (norm.includes('=')) {
+                const parts = norm.split('=');
+                const leftRaw = parts[0].trim();
+                const rightRaw = parts.slice(1).join('=').trim();
+
+                let leftTex = leftRaw;
+                if (!/^[a-zA-Z]\s*\([a-zA-Z]\)$/.test(leftRaw)) {
+                    try { leftTex = nerdamer(leftRaw).toTeX(); } catch (e) { leftTex = leftRaw; }
+                }
+                let rightTex = rightRaw ? nerdamer(rightRaw).toTeX() : "";
+                let combined = rightRaw ? `${leftTex} = ${rightTex}` : `${leftTex} =`;
+                if (window.formatFractions) combined = window.formatFractions(combined, stacked);
+                if (sep === ",") combined = combined.replace(/(\d)\.(\d)/g, '$1,$2');
+                return combined.replace(/\\cdot\s*\\pi/g, '\\pi');
+            }
+
+            let tex = nerdamer(norm).toTeX();
+            if (window.formatFractions) tex = window.formatFractions(tex, stacked);
+            if (sep === ",") tex = tex.replace(/(\d)\.(\d)/g, '$1,$2');
+            return tex.replace(/\\cdot\s*\\pi/g, '\\pi');
+        } catch (e) {
+            let fallback = cleaned
+                .replace(/[πΠ]/g, '\\pi ')
+                .replace(/√\(([^)]*)\)/g, '\\sqrt{$1}')
+                .replace(/\*/g, ' \\cdot ');
+            if (window.formatFractions) fallback = window.formatFractions(fallback, stacked);
+            return fallback;
+        }
+    },
+
+    /**
+     * Udfører CAS-beregning ('eval', 'solve', 'diff', 'int').
+     */
+    execute: function(rawText, actionType, options) {
+        const opts = options || {};
+        const isExact = Boolean(opts.isExact);
+        const decimals = Number.isFinite(opts.decimals) ? opts.decimals : 2;
+        const decSep = opts.decSep || ",";
+        const isStacked = opts.isStacked !== undefined ? Boolean(opts.isStacked) : true;
+
+        let textToParse = String(rawText || "").trim();
+        if (!textToParse) {
+            throw new Error("Skriv et udtryk i feltet eller markér en ligning i Word først.");
+        }
+
+        if (textToParse.includes('⇒')) {
+            textToParse = textToParse.split('⇒')[0].trim();
+        }
+
+        let mathExpr = window.normalizeInput(textToParse);
+        mathExpr = window.convertDanishDecimalToDot(mathExpr, decSep);
+
+        const fnHeaderMatch = mathExpr.match(/^([a-zA-Z])\s*\(\s*([a-zA-Z])\s*\)\s*=\s*(.+)$/);
+        const yHeaderMatch = !fnHeaderMatch ? mathExpr.match(/^y\s*=\s*(.+)$/i) : null;
+
+        let originalLatex = "";
+        try {
+            originalLatex = window.CAS.toPreviewLatex(textToParse, decSep, isStacked);
+        } catch (e) {
+            originalLatex = textToParse;
+        }
+
+        const mainVar = fnHeaderMatch ? fnHeaderMatch[2] : detectMainVariable(mathExpr);
+        let latexResult = "";
+        let prefix = "";
+
+        try {
+            if (actionType === 'solve') {
+                let eqToSolve = mathExpr;
+                if (fnHeaderMatch) eqToSolve = fnHeaderMatch[3] + "=0";
+                else if (yHeaderMatch) eqToSolve = yHeaderMatch[1] + "=0";
+                else if (!eqToSolve.includes('=')) eqToSolve = eqToSolve + "=0";
+
+                const parsed = nerdamer.solveEquations(eqToSolve, mainVar);
+                const rawSolutions = Array.isArray(parsed) ? parsed : [parsed];
+
+                const realSolutions = rawSolutions.filter(sol => {
+                    const s = sol ? sol.toString() : "";
+                    return s !== "" && !/\bi\b|\*i/.test(s);
+                });
+
+                if (realSolutions.length === 0) {
+                    throw new Error("Ligningen har ingen reelle løsninger.");
+                }
+
+                let anyApprox = false;
+                const formattedSolutions = realSolutions.map(val => {
+                    if (isExact) {
+                        return nerdamer(val).toTeX();
+                    } else {
+                        const decText = nerdamer(val).evaluate().text('decimals');
+                        const { text: roundedText, wasRounded } = roundNumbersInString(decText, decimals);
+                        if (wasRounded) anyApprox = true;
+                        return nerdamer(roundedText).toTeX('decimals');
+                    }
+                });
+
+                const joinSymbol = anyApprox ? ` \\lor ${mainVar} \\approx ` : ` \\lor ${mainVar} = `;
+                latexResult = formattedSolutions.join(joinSymbol);
+                prefix = anyApprox ? `\\Rightarrow ${mainVar} \\approx ` : `\\Rightarrow ${mainVar} = `;
+            }
+            else if (actionType === 'eval' || actionType === 'approx' || actionType === 'calc') {
+                let exprToEval = mathExpr;
+                if (fnHeaderMatch) exprToEval = fnHeaderMatch[3];
+                else if (yHeaderMatch) exprToEval = yHeaderMatch[1];
+                else if (exprToEval.endsWith('=')) exprToEval = exprToEval.slice(0, -1).trim();
+
+                if (isExact) {
+                    latexResult = nerdamer(exprToEval).evaluate().toTeX();
+                    prefix = "= ";
+                } else {
+                    const decimalStr = nerdamer(exprToEval).evaluate().text('decimals');
+                    const { text: roundedStr, wasRounded } = roundNumbersInString(decimalStr, decimals);
+                    latexResult = nerdamer(roundedStr).toTeX('decimals');
+                    prefix = wasRounded ? "\\approx " : "= ";
+                }
+            }
+            else if (actionType === 'diff') {
+                const exprToDiff = fnHeaderMatch ? fnHeaderMatch[3] : (yHeaderMatch ? yHeaderMatch[1] : mathExpr);
+                const fnName = fnHeaderMatch ? fnHeaderMatch[1] : 'f';
+                latexResult = nerdamer(`diff(${exprToDiff}, ${mainVar})`).evaluate().toTeX();
+                prefix = `\\Rightarrow ${fnName}'(${mainVar}) = `;
+            }
+            else if (actionType === 'int') {
+                const exprToInt = fnHeaderMatch ? fnHeaderMatch[3] : (yHeaderMatch ? yHeaderMatch[1] : mathExpr);
+                latexResult = nerdamer(`integrate(${exprToInt}, ${mainVar})`).toTeX() + " + C";
+                prefix = `\\Rightarrow \\int f(${mainVar})\\,d${mainVar} = `;
+            }
+            else {
+                throw new Error("Ukendt beregningstype: " + actionType);
+            }
+        } catch (calcError) {
+            if (calcError.message === "Ligningen har ingen reelle løsninger.") {
+                throw calcError;
+            }
+            throw new Error(`Kunne ikke beregne udtrykket "${textToParse}". Kontrollér parenteser og syntaks.`);
+        }
+
+        if (window.formatFractions) {
+            latexResult = window.formatFractions(latexResult, isStacked);
+            originalLatex = window.formatFractions(originalLatex, isStacked);
+        }
+
+        if (decSep === "," && latexResult) {
+            latexResult = latexResult.replace(/(\d)\.(\d)/g, '$1,$2');
+        }
+
+        if (latexResult) {
+            latexResult = latexResult.replace(/\\cdot\s*\\pi/g, '\\pi');
+        }
+
+        const answerOnlyLatex = (prefix + latexResult).trim();
+        const fullLatex = `${originalLatex} ${answerOnlyLatex}`.trim();
+
+        const toReadableText = (tex) => {
+            return tex
+                .replace(/\\approx\s*/g, '≈ ')
+                .replace(/\\Rightarrow\s*/g, '⇒ ')
+                .replace(/\\int\s*/g, '∫ ')
+                .replace(/\\,/g, ' ')
+                .replace(/\\pi/g, 'π')
+                .replace(/\\cdot/g, '⋅')
+                .replace(/\\lor/g, ' ∨ ')
+                .replace(/\\sqrt\{([^}]+)\}/g, '√($1)')
+                .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1)/($2)')
+                .replace(/\^\{([^}]+)\}/g, '^$1')
+                .replace(/\\/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+        };
+
+        const fallbackText = toReadableText(answerOnlyLatex);
+        const fullFallbackText = `${textToParse} ${fallbackText}`.trim();
+
+        return {
+            rawInput: textToParse,
+            actionType,
+            originalLatex,
+            prefix,
+            resultLatex: latexResult,
+            answerOnlyLatex,
+            fullLatex,
+            fallbackText,
+            fullFallbackText
+        };
+    }
+};
+
+// Bagudkompatible globale funktioner
+window.expressionToPreviewLatex = window.CAS.toPreviewLatex;
+window.evaluateMath = window.CAS.execute;
+
+// ─────────────────────────────────────────────────────────────────
+//  2. WORDBRIDGE (To-vejs læsning & skrivning af OMML i Word)
+// ─────────────────────────────────────────────────────────────────
+
+window.WordBridge = {
+    /**
+     * Læser matematisk udtryk fra Word (både rigtige <m:oMath>-ligninger og rå tekst!).
+     * Returnerer { expr: string, sourceMode: 'word-highlight'|'word-line'|null, rawHighlightedText: string }
+     */
+    readExpressionFromWord: async function(context) {
+        const selection = context.document.getSelection();
+        selection.load("text");
+        const selOoxml = selection.getOoxml();
+        await context.sync();
+
+        // 1. Tjek først om brugeren har markeret en rigtig Word-ligning (<m:oMath>)
+        if (window.ommlToExpression && selOoxml && selOoxml.value) {
+            const ommlExpr = window.ommlToExpression(selOoxml.value);
+            if (ommlExpr) {
+                return {
+                    expr: ommlExpr,
+                    sourceMode: "word-highlight",
+                    rawHighlightedText: selection.text ? selection.text.trim() : ""
+                };
+            }
+        }
+
+        // 2. Tjek om brugeren har markeret almindelig tekst
+        const highlightedText = selection.text ? selection.text.trim() : "";
+        if (highlightedText) {
+            return {
+                expr: highlightedText,
+                sourceMode: "word-highlight",
+                rawHighlightedText: highlightedText
+            };
+        }
+
+        // 3. Ingen markering: Tjek aktuelt afsnit for enten en <m:oMath>-ligning eller tekst før markøren
+        const paragraph = selection.paragraphs.getFirst();
+        const rangeBeforeCursor = selection.expandTo(paragraph.getRange("Start"));
+        rangeBeforeCursor.load("text");
+        const paraOoxml = paragraph.getOoxml();
+        await context.sync();
+
+        if (window.ommlToExpression && paraOoxml && paraOoxml.value) {
+            const paraOmmlExpr = window.ommlToExpression(paraOoxml.value);
+            if (paraOmmlExpr) {
+                return {
+                    expr: paraOmmlExpr,
+                    sourceMode: "word-line",
+                    rawHighlightedText: ""
+                };
+            }
+        }
+
+        let lineText = rangeBeforeCursor.text ? rangeBeforeCursor.text.trim() : "";
+        if (lineText.includes(":")) {
+            lineText = lineText.substring(lineText.lastIndexOf(":") + 1).trim();
+        }
+        if (lineText) {
+            return {
+                expr: lineText,
+                sourceMode: "word-line",
+                rawHighlightedText: ""
+            };
+        }
+
+        return { expr: "", sourceMode: null, rawHighlightedText: "" };
+    },
+
+    /**
+     * Indsætter et matematisk resultat som rigtig Word-ligning (<m:oMath>) uden låste bokse.
+     */
+    insertMathInWord: async function(context, targetRange, latexToInsert, fallbackTextToInsert, wasHighlighted, originalTextToMatch) {
+        if (wasHighlighted && originalTextToMatch) {
+            try {
+                const searchResults = targetRange.search(originalTextToMatch, { matchCase: true });
+                searchResults.load("items");
+                await context.sync();
+                if (searchResults.items.length > 0) {
+                    targetRange = searchResults.items[0];
+                }
+            } catch (e) {
+                // Ignorér hvis søgetekst indeholder specialtegn
+            }
+        }
+
+        if (window.latexToOmmlString) {
+            try {
+                const ommlString = window.latexToOmmlString(latexToInsert);
+                const ccTag = "MATH_TARGET_" + Date.now();
+                const cc = targetRange.insertContentControl();
+                cc.tag = ccTag;
+                cc.cannotDelete = false;
+                cc.cannotEdit = false;
+                cc.insertText("[Beregner...]", "Replace");
+
+                const paragraph = cc.paragraphs.getFirst();
+                const pOoxml = paragraph.getOoxml();
+                await context.sync();
+
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(pOoxml.value, "text/xml");
+                const mathDoc = parser.parseFromString(ommlString, "text/xml");
+                const importedMathNode = xmlDoc.importNode(mathDoc.documentElement, true);
+
+                const tags = xmlDoc.getElementsByTagName("*");
+                let sdtNode = null;
+                let rNode = null;
+
+                for (let i = 0; i < tags.length; i++) {
+                    if (tags[i].nodeName === "w:tag" || tags[i].localName === "tag") {
+                        const val = tags[i].getAttribute("w:val") || tags[i].getAttribute("val");
+                        if (val === ccTag) {
+                            sdtNode = tags[i].parentNode.parentNode;
+                            break;
+                        }
+                    }
+                }
+
+                if (!sdtNode) {
+                    for (let i = 0; i < tags.length; i++) {
+                        if ((tags[i].nodeName === "w:t" || tags[i].localName === "t") && tags[i].textContent.includes("[Beregner...]")) {
+                            let p = tags[i].parentNode;
+                            while (p) {
+                                if (!rNode && (p.nodeName === "w:r" || p.localName === "r")) rNode = p;
+                                if (!sdtNode && (p.nodeName === "w:sdt" || p.localName === "sdt")) sdtNode = p;
+                                p = p.parentNode;
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                let replacedInXml = false;
+                if (sdtNode) {
+                    let sdtContent = null;
+                    for (let i = 0; i < sdtNode.childNodes.length; i++) {
+                        const child = sdtNode.childNodes[i];
+                        if (child.nodeName === "w:sdtContent" || child.localName === "sdtContent") {
+                            sdtContent = child;
+                            break;
+                        }
+                    }
+                    if (sdtContent) {
+                        while (sdtContent.firstChild) {
+                            sdtContent.removeChild(sdtContent.firstChild);
+                        }
+                        sdtContent.appendChild(importedMathNode);
+                        replacedInXml = true;
+                    } else {
+                        sdtNode.parentNode.replaceChild(importedMathNode, sdtNode);
+                        replacedInXml = true;
+                    }
+                } else if (rNode) {
+                    rNode.parentNode.replaceChild(importedMathNode, rNode);
+                    replacedInXml = true;
+                }
+
+                if (replacedInXml) {
+                    const serializer = new XMLSerializer();
+                    let newOoxml = serializer.serializeToString(xmlDoc);
+
+                    const preambleMatch = pOoxml.value.match(/^(<\?xml[^>]+>\s*<\?mso-application[^>]+>\s*)/i);
+                    const preamble = preambleMatch ? preambleMatch[1] : '<?xml version="1.0" standalone="yes"?>\n<?mso-application progid="Word.Document"?>\n';
+                    newOoxml = newOoxml.replace(/^<\?xml[^>]+>\s*/i, '');
+                    newOoxml = preamble + newOoxml;
+
+                    paragraph.insertOoxml(newOoxml, "Replace");
+                    await context.sync();
+
+                    // Pak Content Control-rammen rent ud med delete(true), så ligningen aldrig låser i Word Web
+                    const remainingCcs = paragraph.contentControls;
+                    remainingCcs.load("items/tag");
+                    await context.sync();
+
+                    for (let i = 0; i < remainingCcs.items.length; i++) {
+                        const item = remainingCcs.items[i];
+                        if (!item.tag || item.tag.startsWith("MATH_TARGET_")) {
+                            item.cannotDelete = false;
+                            item.cannotEdit = false;
+                            item.delete(true);
+                        }
+                    }
+                    await context.sync();
+                    return;
+                }
+            } catch (ooxmlErr) {
+                console.warn("OOXML-indsættelse fejlede, bruger tekst-fallback:", ooxmlErr);
+            }
+        }
+
+        targetRange.insertText(fallbackTextToInsert, "Replace");
+        await context.sync();
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────
+//  3. GEOGEBRA-BRO (Konverterer dansk matematik & åbner GeoGebra Online)
+// ─────────────────────────────────────────────────────────────────
+
+window.GeoGebraBridge = {
+    /**
+     * Henter det aktuelle udtryk (fra Word eller panelet), konverterer dansk komma
+     * og potenser til gyldig GeoGebra-syntaks, kopierer det til udklipsholderen
+     * og åbner GeoGebra Online i en ny browserfane.
+     */
+    openOnlineWithExpression: async function() {
+        const noticeEl = document.getElementById("ggbCopyNotice");
+        const inputEl = document.getElementById("mathInput");
+        let expr = inputEl ? inputEl.value.trim() : "";
+
+        // Hvis der er markeret en ligning i Word, hent den automatisk først
+        if (window.isOfficeReady && window.Word) {
+            try {
+                await Word.run(async (context) => {
+                    const wordData = await window.WordBridge.readExpressionFromWord(context);
+                    if (wordData.sourceMode === "word-highlight" && wordData.expr) {
+                        expr = wordData.expr;
+                        if (inputEl) {
+                            inputEl.value = expr;
+                            window.updateMathPreview();
+                        }
+                    }
+                });
+            } catch (e) {
+                // Fortsæt med panelets tekst
+            }
+        }
+
+        const ggbExpr = expr ? window.CAS.toGeoGebraSyntax(expr) : "";
+
+        if (ggbExpr && navigator.clipboard && navigator.clipboard.writeText) {
+            try {
+                await navigator.clipboard.writeText(ggbExpr);
+                if (noticeEl) {
+                    noticeEl.textContent = `Kopieret til GeoGebra: ${ggbExpr} (tryk Ctrl+V i GeoGebra)`;
+                    noticeEl.classList.remove("hidden");
+                }
+            } catch (e) {
+                if (noticeEl) {
+                    noticeEl.textContent = `GeoGebra-format: ${ggbExpr}`;
+                    noticeEl.classList.remove("hidden");
+                }
+            }
+        } else if (ggbExpr && noticeEl) {
+            noticeEl.textContent = `GeoGebra-format: ${ggbExpr}`;
+            noticeEl.classList.remove("hidden");
+        }
+
+        window.open("https://www.geogebra.org/calculator", "_blank", "noopener,noreferrer");
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────
+//  4. UI-INTEGRATION (Forhåndsvisning, Resultatkort & Historik)
+// ─────────────────────────────────────────────────────────────────
+
+window.getCalcOptions = function() {
+    const exactToggle = document.getElementById("exactToggle");
+    const stackedToggle = document.getElementById("stackedFractionToggle");
+    const decimalSelect = document.getElementById("decimalSelect");
+    const separatorSelect = document.getElementById("decimalSeparator");
+
+    return {
+        isExact: exactToggle ? exactToggle.checked : false,
+        isStacked: stackedToggle ? stackedToggle.checked : true,
+        decimals: decimalSelect ? parseInt(decimalSelect.value, 10) : 2,
+        decSep: separatorSelect ? separatorSelect.value : ","
+    };
+};
+
+window.updateMathPreview = function() {
+    const inputEl = document.getElementById("mathInput");
+    const previewEl = document.getElementById("mathPreview");
+    if (!inputEl || !previewEl) return;
+
+    const raw = inputEl.value.trim();
+    if (!raw) {
+        previewEl.innerHTML = '<span class="preview-placeholder">Forhåndsvisning vises her, mens du skriver...</span>';
+        return;
+    }
+
+    const opts = window.getCalcOptions();
+    const previewLatex = window.CAS.toPreviewLatex(raw, opts.decSep, opts.isStacked);
+    if (window.renderLatexToHtml) {
+        previewEl.innerHTML = window.renderLatexToHtml(previewLatex, false);
+    } else {
+        previewEl.textContent = raw;
+    }
+};
+
+function renderResultInPanel(calcObj) {
+    window.lastCalculation = calcObj;
+    window.currentResult = " " + calcObj.fallbackText;
+
+    const resultCard = document.getElementById("calcResultCard");
+    const resultMathEl = document.getElementById("calcResultMath");
+    const insertBtn = document.getElementById("insertResultToWordBtn");
+
+    if (resultCard) resultCard.classList.remove("hidden");
+    if (resultMathEl) {
+        if (window.renderLatexToHtml) {
+            resultMathEl.innerHTML = window.renderLatexToHtml(calcObj.fullLatex, true);
+        } else {
+            resultMathEl.textContent = calcObj.fullFallbackText;
+        }
+    }
+    if (insertBtn) {
+        insertBtn.disabled = false;
+    }
+
+    if (
+        window.calculationHistory.length === 0 ||
+        window.calculationHistory[0].fullLatex !== calcObj.fullLatex
+    ) {
+        window.calculationHistory.unshift(calcObj);
+        if (window.calculationHistory.length > 8) {
+            window.calculationHistory.pop();
+        }
+        renderHistoryList();
+    }
+}
+
+function renderHistoryList() {
+    const container = document.getElementById("calcHistoryList");
+    const section = document.getElementById("calcHistorySection");
+    if (!container) return;
+
+    if (window.calculationHistory.length === 0) {
+        if (section) section.classList.add("hidden");
+        container.innerHTML = "";
+        return;
+    }
+
+    if (section) section.classList.remove("hidden");
+    container.innerHTML = "";
+
+    window.calculationHistory.forEach((item) => {
+        const row = document.createElement("div");
+        row.className = "history-item";
+
+        const mathDiv = document.createElement("button");
+        mathDiv.type = "button";
+        mathDiv.className = "history-math-btn";
+        mathDiv.title = "Klik for at indlæse udtrykket i feltet igen";
+        mathDiv.innerHTML = window.renderLatexToHtml
+            ? window.renderLatexToHtml(item.fullLatex, false)
+            : item.fullFallbackText;
+        mathDiv.addEventListener("click", () => {
+            const inputEl = document.getElementById("mathInput");
+            if (inputEl) {
+                inputEl.value = item.rawInput;
+                panelInputDirty = true;
+                window.updateMathPreview();
+                renderResultInPanel(item);
+            }
+        });
+
+        const insertBtn = document.createElement("button");
+        insertBtn.type = "button";
+        insertBtn.className = "history-insert-btn secondary-btn";
+        insertBtn.title = "Indsæt denne udregning i Word";
+        insertBtn.textContent = "Indsæt";
+        insertBtn.addEventListener("click", () => {
+            window.insertCalcObjectToWord(item);
+        });
+
+        row.appendChild(mathDiv);
+        row.appendChild(insertBtn);
+        container.appendChild(row);
+    });
+}
+
+/**
+ * Henter markeret tekst eller rigtig Word-ligning (<m:oMath>) fra Word ind i panelets felt.
+ */
+window.fetchFromWordToPanel = async function() {
     const errorBox = document.getElementById("inlineError");
-    if (errorBox) errorBox.innerText = "";
+    if (errorBox) errorBox.textContent = "";
+
+    if (!window.isOfficeReady || !window.Word) {
+        if (errorBox) errorBox.textContent = "Word-forbindelsen er ikke aktiv (kører i browser-tilstand).";
+        return;
+    }
+
+    try {
+        await Word.run(async (context) => {
+            const wordData = await window.WordBridge.readExpressionFromWord(context);
+            if (!wordData.expr) {
+                if (errorBox) errorBox.textContent = "Ingen ligning eller tekst fundet ved markøren i Word.";
+                return;
+            }
+
+            const inputEl = document.getElementById("mathInput");
+            if (inputEl) {
+                inputEl.value = wordData.expr;
+                panelInputDirty = true;
+                window.updateMathPreview();
+                inputEl.focus();
+            }
+        });
+    } catch (err) {
+        console.error(err);
+        if (errorBox) errorBox.textContent = "Kunne ikke læse fra Word: " + err.message;
+    }
+};
+
+window.insertCalcObjectToWord = async function(calcObj) {
+    const targetCalc = calcObj || window.lastCalculation;
+    if (!targetCalc) return;
+
+    const errorBox = document.getElementById("inlineError");
+    if (errorBox) errorBox.textContent = "";
+
+    if (!window.isOfficeReady || !window.Word) {
+        if (errorBox) errorBox.textContent = "Kan ikke indsætte i Word, da panelet ikke kører inde i Word.";
+        return;
+    }
 
     try {
         await Word.run(async (context) => {
@@ -12,383 +707,138 @@ window.calculateInline = async function(actionType) {
             selection.load("text");
             await context.sync();
 
-            let textToParse = selection.text.trim();
-            let wasHighlighted = true;
-
-            if (!textToParse) {
-                wasHighlighted = false;
-                const paragraph = selection.paragraphs.getFirst();
-                const rangeBeforeCursor = selection.expandTo(paragraph.getRange("Start"));
-                rangeBeforeCursor.load("text");
-                await context.sync();
-                
-                textToParse = rangeBeforeCursor.text.trim();
-                
-                if (textToParse.includes(":")) {
-                    textToParse = textToParse.substring(textToParse.lastIndexOf(":") + 1).trim();
-                }
-            }
-
-            if (!textToParse) {
-                throw new Error("Kunne ikke finde noget at regne på. Markér funktionen/ligningen først.");
-            }
-
-            // Læs indstillinger fra UI
-            const exactToggle = document.getElementById("exactToggle");
-            const decimalSelect = document.getElementById("decimalSelect");
-            const separatorSelect = document.getElementById("decimalSeparator");
-            
-            const isExact = exactToggle ? exactToggle.checked : false;
-            const decimals = decimalSelect ? parseInt(decimalSelect.value) : 2;
-            const decSep = separatorSelect ? separatorSelect.value : ",";
-
-            // Normalisering: brug den delte hjælpefunktion fra utils.js
-            // (erstatter π, Π og √ – logikken er samlet ét sted i stedet for at duplikere den)
-            let mathExpr = window.normalizeInput(textToParse);
-            
-            // Konverter komma til punktum for nerdamer (kun hvis de står mellem to tal)
-            if (decSep === ",") {
-                mathExpr = mathExpr.replace(/(\d),(\d)/g, '$1.$2');
-            }
-            
-            let resultText = "";
-            let latexResult = "";
-            let originalLatex = "";
-            let prefix = "";
-            let base64Image = null;
-
-            try {
-                // Prøv at lade nerdamer formatere det oprindelige udtryk (laver f.eks. 1/2 til en rigtig brøk)
-                try {
-                    // Brug nerdamer til at bygge en LaTeX streng, fx "\frac{1}{2}" i stedet for "1/2"
-                    originalLatex = nerdamer(mathExpr).toTeX();
-                } catch(e) {
-                    originalLatex = textToParse; // Fallback til rå tekst
-                }
-
-                let mainVar = 'x';
-                try {
-                    let eqForVars = mathExpr.includes('=') ? mathExpr.split('=')[0] : mathExpr;
-                    let vars = nerdamer(eqForVars).variables();
-                    if (vars.length > 0) mainVar = vars[0];
-                } catch(e) {
-                    // Fallback: rens alle kendte funktionsnavne væk først, så finder vi den faktiske variabel.
-                    // Den gamle metode (ekskluder enkeltbogstaver) ramte f.eks. 'a' i tan(x)+a.
-                    const fnNames = ['sin','cos','tan','log','exp','sqrt','abs','pi','ln'];
-                    let cleaned = mathExpr;
-                    fnNames.forEach(fn => { cleaned = cleaned.replace(new RegExp(fn, 'g'), ''); });
-                    const match = cleaned.match(/[a-zA-Z]/);
-                    if (match) mainVar = match[0];
-                }
-
-                if (actionType === 'solve') {
-                    const parsed = nerdamer.solveEquations(mathExpr, mainVar);
-                    let texArray = Array.isArray(parsed) ? parsed.map(val => nerdamer(val).toTeX()) : [nerdamer(parsed).toTeX()];
-                    latexResult = texArray.join(" \\lor ");
-                    prefix = `\\Rightarrow ${mainVar} = `; 
-                } 
-                else if (actionType === 'eval' || actionType === 'approx' || actionType === 'calc') {
-                    if (isExact) {
-                        latexResult = nerdamer(mathExpr).evaluate().toTeX();
-                        prefix = "= ";
-                    } else {
-                        // Afrundet / kommatal
-                        let decimalStr = nerdamer(mathExpr).evaluate().text('decimals');
-                        latexResult = nerdamer(decimalStr).toTeX('decimals');
-                        let originalLatexResult = latexResult;
-                        
-                        // Afrund til det valgte antal decimaler med safeRound
-                        // (undgår IEEE 754 fejl som (1.005).toFixed(2) → "1.00")
-                        const regex = new RegExp(`\\d+\\.\\d{${decimals + 1},}`, 'g');
-                        latexResult = latexResult.replace(regex, function(match) {
-                            const rounded = window.safeRound(parseFloat(match), decimals);
-                            return rounded.toFixed(decimals)
-                                .replace(/(\.[0-9]*[1-9])0+$/, '$1') // Fjern trailing nuls
-                                .replace(/\.0*$/, '');               // Fjern tom decimal
-                        });
-                        
-                        // Tjek om LaTeX-resultatet indeholder 10+ decimaler (f.eks. pi eller 1/3)
-                        // RETTET: den gamle regex /\\.\\d{10,}/ matchede bogstaveligt \\ og \\d,
-                        // ikke et punktum efterfulgt af cifre. Korrekt regex er /\.\d{10,}/
-                        const hasManyDecimals = /\.\d{10,}/.test(originalLatexResult);
-                        if (originalLatexResult !== latexResult || hasManyDecimals) {
-                            prefix = "\\approx ";
-                        } else {
-                            prefix = "= ";
-                        }
-                    }
-                }
-                else if (actionType === 'diff') {
-                    latexResult = nerdamer('diff(' + mathExpr + ', ' + mainVar + ')').evaluate().toTeX();
-                    prefix = `\\Rightarrow f'(${mainVar}) = `;
-                }
-                else if (actionType === 'int') {
-                    latexResult = nerdamer('integrate(' + mathExpr + ', ' + mainVar + ')').toTeX();
-                    prefix = `\\Rightarrow \\int f(${mainVar}) d${mainVar} = `;
-                }
-                // Graf-handling er fjernet: 'graph'-action-type eksisterede aldrig
-                // i UI'et og kaldte den udefinerede drawGraphAndGetBase64().
-                // Grafer indsættes via GeoGebra-modalen i graphing.js.
-                console.warn("actionType 'graph' er ikke understøttet fra calculateInline.");
-            } catch (calcError) {
-                // Videresend den konkrete fejlbesked fra nerdamer så brugeren får en meningsfyldt fejl.
-                // Den generiske besked skjulte f.eks. "division by zero" og "unsupported operation".
-                throw new Error(`Matematisk fejl: ${calcError.message}. Tjek at udtrykket er gyldigt og at variablen hedder 'x' (ikke t, k etc.).`);
-            }
-            
-            // Udskift punktum med komma i outputtet, hvis indstillingen er sat til komma
-            if (decSep === "," && latexResult) {
-                latexResult = latexResult.replace(/(\d)\.(\d)/g, '$1,$2');
-            }
-
-            // Generel formatering af resultatet
-            if (latexResult) {
-                // Fjern \cdot foran \pi for et mere naturligt udseende (f.eks. 2\pi i stedet for 2 \cdot \pi)
-                latexResult = latexResult.replace(/\\cdot\s*\\pi/g, '\\pi');
-            }
-
-            if (actionType === 'graph' && base64Image) {
-                let p = selection.insertParagraph("", "After");
-                p.insertInlinePictureFromBase64(base64Image, "End");
-                await context.sync();
-            } else {
-                // Hjælpefunktion hvis vi falder tilbage til at indsætte rå tekst
-                const getFallbackText = () => {
-                    let text = prefix + latexResult;
-                    return text
-                        .replace(/\\approx\s*/g, '≈ ')
-                        .replace(/\\Rightarrow\s*/g, '⇒ ')
-                        .replace(/\\int\s*/g, '∫ ')
-                        .replace(/\\pi/g, 'π')
-                        .replace(/\\cdot/g, '·')
-                        .replace(/\\lor/g, ' v ')
-                        .replace(/\\/g, ''); // Fjern alle andre backslashes for et renere look
-                };
-
-                let ooxml = "";
-                try {
-                    let targetRange = context.document.getSelection();
-                    
-                    if (window.latexToOmmlString) {
-                        const stackedToggle = document.getElementById("stackedFractionToggle");
-                        const isStacked = stackedToggle ? stackedToggle.checked : true;
-                        
-                        let fullLatex = wasHighlighted 
-                            ? originalLatex + " " + prefix + latexResult
-                            : prefix + latexResult;
-                            
-                        if (window.formatFractions) {
-                            fullLatex = window.formatFractions(fullLatex, isStacked);
-                        }
-                            
-                        let ommlString = window.latexToOmmlString(fullLatex);
-                        
-                        // Hvis brugeren har markeret tekst, prøver vi at indsnævre markeringen for at undgå at slette usynlige linjeskift (som ødelægger linjen ovenover)
-                        if (wasHighlighted && textToParse) {
-                            let searchResults = targetRange.search(textToParse, {matchCase: true});
-                            searchResults.load("items");
-                            await context.sync();
-                            if (searchResults.items.length > 0) {
-                                targetRange = searchResults.items[0];
-                            }
-                        }
-                        
-                        // 1. Indpak markeringen i en midlertidig Content Control
-                        let ccTag = "MATH_TARGET_" + Date.now();
-                        let cc = targetRange.insertContentControl();
-                        cc.tag = ccTag;
-                        
-                        // Sørg for at CC ikke er tom, ellers kan Word Web fjerne den fra OOXML. 
-                        // Det overskriver kun originalteksten, som vi alligevel skal erstatte.
-                        cc.insertText("[Beregner...]", "Replace");
-                        
-                        // 2. Find afsnittet
-                        let paragraph = cc.paragraphs.getFirst();
-                        let pOoxml = paragraph.getOoxml();
-                        await context.sync();
-                        
-                        // 3. Parse afsnittets OOXML
-                        let parser = new DOMParser();
-                        let xmlDoc = parser.parseFromString(pOoxml.value, "text/xml");
-                        
-                        // 4. Find vores Content Control tag (<w:sdt>) eller det run (<w:r>) der indeholder teksten
-                        let targetNodeToReplace = null;
-                        let tags = xmlDoc.getElementsByTagName("*");
-                        
-                        // A: Prøv via ccTag
-                        for (let i = 0; i < tags.length; i++) {
-                            if (tags[i].nodeName === "w:tag" || tags[i].localName === "tag") {
-                                let val = tags[i].getAttribute("w:val") || tags[i].getAttribute("val");
-                                if (val === ccTag) {
-                                    targetNodeToReplace = tags[i].parentNode.parentNode;
-                                    break;
-                                }
-                            }
-                        }
-                        
-                        // B: Fallback via [Beregner...] (hvis tag blev strippet, hvilket sker ofte i Word Web)
-                        if (!targetNodeToReplace) {
-                            for (let i = 0; i < tags.length; i++) {
-                                if ((tags[i].nodeName === "w:t" || tags[i].localName === "t") && tags[i].textContent.includes("[Beregner...]")) {
-                                    let p = tags[i].parentNode;
-                                    let sdtNode = null;
-                                    let rNode = null;
-                                    
-                                    while (p) {
-                                        if (!rNode && (p.nodeName === "w:r" || p.localName === "r")) rNode = p;
-                                        if (!sdtNode && (p.nodeName === "w:sdt" || p.localName === "sdt")) sdtNode = p;
-                                        p = p.parentNode;
-                                    }
-                                    
-                                    // Hvis vi fandt en sdt (Content Control), bruger vi den. Ellers falder vi tilbage til Run'et.
-                                    if (sdtNode) {
-                                        targetNodeToReplace = sdtNode;
-                                    } else if (rNode) {
-                                        targetNodeToReplace = rNode;
-                                    }
-                                    break;
-                                }
-                            }
-                        }
-                        
-                        // C: Sidste udvej (find en sdt)
-                        if (!targetNodeToReplace) {
-                            let sdts = xmlDoc.getElementsByTagName("w:sdt");
-                            if (sdts.length === 0) sdts = xmlDoc.getElementsByTagName("sdt");
-                            if (sdts.length > 0) targetNodeToReplace = sdts[sdts.length - 1];
-                        }
-                        
-                        if (targetNodeToReplace) {
-                            // 5. Parse OMML
-                            let mathDoc = parser.parseFromString(ommlString, "text/xml");
-                            let importedMathNode = xmlDoc.importNode(mathDoc.documentElement, true);
-                            
-                            // 6. Erstat Content Control (<w:sdt>) ELLER Run (<w:r>) med vores <m:oMath>
-                            targetNodeToReplace.parentNode.replaceChild(importedMathNode, targetNodeToReplace);
-                            
-                            // 7. Serialisér tilbage til OOXML string
-                            let serializer = new XMLSerializer();
-                            let newOoxml = serializer.serializeToString(xmlDoc);
-                            
-                            // Sikr at Flat OPC headers bevares til Word Web
-                            let preambleMatch = pOoxml.value.match(/^(<\?xml[^>]+>\s*<\?mso-application[^>]+>\s*)/i);
-                            let preamble = preambleMatch ? preambleMatch[1] : '<?xml version="1.0" standalone="yes"?>\n<?mso-application progid="Word.Document"?>\n';
-                            newOoxml = newOoxml.replace(/^<\?xml[^>]+>\s*/i, '');
-                            newOoxml = preamble + newOoxml;
-                            
-                            // 8. Erstat hele afsnittet med den modifikerede OOXML (blok-til-blok erstatning virker i Word Web)
-                            paragraph.insertOoxml(newOoxml, "Replace");
-                            await context.sync(); 
-                        } else {
-                            // Fallback hvis vi ikke kunne finde content controlen (sker sjældent)
-                            targetRange.insertOoxml(window.latexToOoxml(fullLatex), "Replace");
-                            await context.sync();
-                        }
-                    } else {
-                        const fallbackTxt = wasHighlighted ? textToParse + " " + getFallbackText() : " " + getFallbackText();
-                        
-                        if (wasHighlighted && textToParse) {
-                            let searchResults = targetRange.search(textToParse, {matchCase: true});
-                            searchResults.load("items");
-                            await context.sync();
-                            if (searchResults.items.length > 0) {
-                                targetRange = searchResults.items[0];
-                            }
-                        }
-                        
-                        targetRange.insertText(fallbackTxt, "Replace");
-                        await context.sync();
-                    }
-                } catch (ooxmlErr) {
-                    console.error("❌ OOXML-indsættelse fejlede:", ooxmlErr);
-                    console.error("   Fejlbesked:", ooxmlErr.message);
-                    console.log("↩️ Bruger tekst-fallback efter OOXML-fejl");
-                    
-                    let insertRange = context.document.getSelection();
-                    const fallbackTxt = wasHighlighted ? textToParse + " " + getFallbackText() : " " + getFallbackText();
-                    
-                    if (wasHighlighted && textToParse) {
-                        let searchResults = insertRange.search(textToParse, {matchCase: true});
-                        searchResults.load("items");
-                        await context.sync();
-                        if (searchResults.items.length > 0) {
-                            insertRange = searchResults.items[0];
-                        }
-                    }
-                    
-                    insertRange.insertText(fallbackTxt, "Replace");
-                    await context.sync();
-                }
-            }
-            
+            const hasSelection = selection.text.trim().length > 0;
+            await window.WordBridge.insertMathInWord(
+                context,
+                selection,
+                targetCalc.fullLatex,
+                targetCalc.fullFallbackText,
+                hasSelection,
+                selection.text.trim()
+            );
             await window.ensureFooter(context);
         });
     } catch (error) {
         console.error(error);
-        errorBox.innerText = error.message;
+        if (errorBox) errorBox.textContent = "Kunne ikke indsætte i Word: " + error.message;
     }
-}
+};
 
-window.calculateDraft = function() {
-    const expression = document.getElementById("expression").value.trim();
-    const resultContainer = document.getElementById("resultContainer");
-    const insertBtn = document.getElementById("insertBtn");
+window.calculateInline = async function(actionType) {
+    const errorBox = document.getElementById("inlineError");
+    if (errorBox) errorBox.textContent = "";
 
-    if (!expression) {
-        if (resultContainer) resultContainer.innerText = "Skriv et udtryk først.";
+    const inputEl = document.getElementById("mathInput");
+    const panelText = inputEl ? inputEl.value.trim() : "";
+    const opts = window.getCalcOptions();
+    const autoInsertToggle = document.getElementById("autoInsertToggle");
+    const autoInsert = autoInsertToggle ? autoInsertToggle.checked : true;
+
+    if (!window.isOfficeReady || !window.Word) {
+        try {
+            const calcObj = window.CAS.execute(panelText, actionType, opts);
+            renderResultInPanel(calcObj);
+        } catch (err) {
+            if (errorBox) errorBox.textContent = err.message;
+        }
         return;
     }
 
-    const exactToggle = document.getElementById("exactToggle");
-    const decimalSelect = document.getElementById("decimalSelect");
-    const separatorSelect = document.getElementById("decimalSeparator");
-    
-    const isExact = exactToggle ? exactToggle.checked : false;
-    const decimals = decimalSelect ? parseInt(decimalSelect.value) : 2;
-    const decSep = separatorSelect ? separatorSelect.value : ",";
-
     try {
-        let mathExpr = window.normalizeInput(expression);
-        let result = "";
-        if (mathExpr.includes("=")) {
-            const parsed = nerdamer.solveEquations(mathExpr);
-            result = Array.isArray(parsed) ? parsed.map(val => val.toString()).join(", ") : parsed.toString();
-        } else {
-            // Konverter input til punktum for nerdamer
-            if (decSep === ",") {
-                mathExpr = mathExpr.replace(/(\d),(\d)/g, '$1.$2');
-            }
+        await Word.run(async (context) => {
+            const selection = context.document.getSelection();
+            const wordData = await window.WordBridge.readExpressionFromWord(context);
 
-            if (isExact) {
-                result = nerdamer(mathExpr).evaluate().text();
+            let sourceMode = "panel";
+            let exprToCalculate = panelText;
+
+            if (wordData.sourceMode === "word-highlight" && wordData.expr) {
+                sourceMode = "word-highlight";
+                exprToCalculate = wordData.expr;
+            } else if (panelInputDirty && panelText) {
+                sourceMode = "panel";
+                exprToCalculate = panelText;
+            } else if (wordData.sourceMode === "word-line" && wordData.expr) {
+                sourceMode = "word-line";
+                exprToCalculate = wordData.expr;
+            } else if (panelText) {
+                sourceMode = "panel";
+                exprToCalculate = panelText;
             } else {
-                result = nerdamer(mathExpr).evaluate().text('decimals');
-                const regex = new RegExp(`\\d+\\.\\d{${decimals + 1},}`, 'g');
-                result = result.replace(regex, function(match) {
-                    const rounded = window.safeRound(parseFloat(match), decimals);
-                    return rounded.toFixed(decimals)
-                        .replace(/(\.[0-9]*[1-9])0+$/, '$1')
-                        .replace(/\.0*$/, '');
-                });
+                throw new Error("Skriv et udtryk i feltet eller markér en ligning i Word først.");
             }
-        }
-        
-        // Formater resultatet (fjern f.eks. * foran pi og variabler for pænere output i kladdehæftet)
-        if (typeof result === 'string') {
-            result = result.replace(/\*pi/g, 'π');
-            result = result.replace(/\*([a-zA-Z])/g, '$1'); 
-            result = result.replace(/pi/g, 'π');
-        }
-        
-        if (decSep === "," && typeof result === 'string') {
-            result = result.replace(/(\d)\.(\d)/g, '$1,$2');
-        }
 
-        window.currentResult = " = " + result;
-        resultContainer.innerText = window.currentResult;
-        insertBtn.disabled = false;
+            if (inputEl && inputEl.value.trim() !== exprToCalculate) {
+                inputEl.value = exprToCalculate;
+                window.updateMathPreview();
+            }
+            panelInputDirty = false;
+
+            const calcObj = window.CAS.execute(exprToCalculate, actionType, opts);
+            renderResultInPanel(calcObj);
+
+            if (sourceMode === "word-highlight") {
+                await window.WordBridge.insertMathInWord(
+                    context,
+                    selection,
+                    calcObj.fullLatex,
+                    calcObj.fullFallbackText,
+                    Boolean(wordData.rawHighlightedText),
+                    wordData.rawHighlightedText
+                );
+                await window.ensureFooter(context);
+            } else if (sourceMode === "word-line") {
+                await window.WordBridge.insertMathInWord(
+                    context,
+                    selection,
+                    calcObj.answerOnlyLatex,
+                    " " + calcObj.fallbackText,
+                    false,
+                    ""
+                );
+                await window.ensureFooter(context);
+            } else if (sourceMode === "panel" && autoInsert) {
+                await window.WordBridge.insertMathInWord(
+                    context,
+                    selection,
+                    calcObj.fullLatex,
+                    calcObj.fullFallbackText,
+                    false,
+                    ""
+                );
+                await window.ensureFooter(context);
+            }
+        });
     } catch (error) {
-        resultContainer.innerText = "Fejl: Kunne ikke beregne.";
-        insertBtn.disabled = true;
+        console.error(error);
+        if (errorBox) errorBox.textContent = error.message;
     }
-}
+};
+
+window.calculateDraft = function() {
+    window.calculateInline('eval');
+};
+window.insertToWord = function() {
+    window.insertCalcObjectToWord(window.lastCalculation);
+};
+
+document.addEventListener("DOMContentLoaded", function() {
+    const inputEl = document.getElementById("mathInput");
+    if (inputEl) {
+        inputEl.addEventListener("input", function() {
+            panelInputDirty = true;
+            window.updateMathPreview();
+        });
+        inputEl.addEventListener("keydown", function(e) {
+            if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                const raw = inputEl.value.trim();
+                if (raw.includes("=")) {
+                    window.calculateInline('solve');
+                } else {
+                    window.calculateInline('eval');
+                }
+            }
+        });
+    }
+});
