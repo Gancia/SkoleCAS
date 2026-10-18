@@ -32,7 +32,7 @@ Eleverne kan arbejde direkte i deres Word-dokument eller bruge panelet i højre 
 
 1. **Download** [`manifest.xml`](manifest.xml) (højreklik og vælg *Gem link som...*)
 2. Åbn **Microsoft Word**
-3. Gå til fanen **Indsæt** og klik på **Tilføjelsesprogrammer**
+3. Gå til fanen **Start** (eller **Hjem**) og klik på **Tilføjelsesprogrammer**
 4. Vælg **Flere tilføjelsesprogrammer** og skift til fanen **Mine tilføjelsesprogrammer**
 5. Klik på **Overfør mit tilføjelsesprogram...** og vælg den downloadede `manifest.xml`
 6. **SkoleCAS-panelet åbner i højre side** og er klar til brug.
@@ -44,7 +44,7 @@ Eleverne kan arbejde direkte i deres Word-dokument eller bruge panelet i højre 
 SkoleCAS understøtter et **tovejs arbejdsflow**, så eleverne kan vælge den arbejdsform, der passer dem bedst:
 
 1. **Direkte i Word-dokumentet (som i WordMat):**
-   - Skriv et regnestykke eller en ligning på en linje i Word (enten som almindelig tekst eller inde i et Word-ligningsfelt med `Alt + =`), eller markér en eksisterende ligning, og klik på **Beregn** eller **Løs ligning**.
+   - Skriv et regnestykke eller en ligning på en linje i Word (enten som almindelig tekst eller inde i et Word-ligningsfelt med `Alt + =`), eller markér en eksisterende ligning, og klik på **Udregn (=)** eller **Løs (⇒)**.
    - SkoleCAS aflæser automatisk linjen eller markeringen (inklusive ægte Word-brøker, potenser og kvadratrødder), viser mellemregningen i panelet og indsætter resultatet som en rigtig Word-ligning direkte i dokumentet.
 2. **I panelets matematikfelt (med live forhåndsvisning):**
    - Skriv udtrykket i feltet i panelet, hvor det formateres løbende med rigtige brøkstreger, potenser og rodtegn, før du trykker `Enter`.
@@ -70,16 +70,16 @@ Skriv et udtryk i Word eller i panelet og vælg en af de fire handlinger:
 
 | Knap | Handling | Eksempel |
 |------|----------|----------|
-| **Beregn (`=`)** | Udregner eller reducerer udtryk numerisk eller eksakt | `1/2 + 3/4` $\rightarrow$ `\frac{1}{2} + \frac{3}{4} = \frac{5}{4}` |
-| **Løs ligning (`⇒`)** | Løser ligning for den automatisk fundne variabel | `2x + 5 = 15` $\rightarrow$ `2x + 5 = 15 \Rightarrow x = 5` |
-| **Differentier (`f'`)** | Differentierer udtrykket mht. variablen | `x^3 + 2x` $\rightarrow$ `\frac{d}{dx}(x^{3} + 2x) = 3x^{2} + 2` |
-| **Integrer (`∫`)** | Finder det ubestemte integral inkl. konstantled | `2x` $\rightarrow$ `\int (2x) dx = x^{2} + C` |
+| **Udregn (`=`)** | Udregner eller reducerer udtryk numerisk eller eksakt | `1/2 + 3/4` $\rightarrow$ `\frac{1}{2} + \frac{3}{4} = \frac{5}{4}` |
+| **Løs (`⇒`)** | Løser ligning for den automatisk fundne variabel | `2x + 5 = 15` $\rightarrow$ `2x + 5 = 15 \Rightarrow x = 5` |
+| **Differentier (`f'`)** | Differentierer udtrykket mht. variablen | `x^3 + 2x` $\rightarrow$ `x^{3} + 2x \Rightarrow f'(x) = 3x^{2} + 2` |
+| **Integrer (`∫`)** | Finder det ubestemte integral inkl. konstantled | `2x` $\rightarrow$ `2x \Rightarrow \int f(x)\,dx = x^{2} + C` |
 
 **Indstillinger for beregning:**
-- **Eksakt svar (brøker og π):** Bevarer eksakte brøker, $\pi$ og kvadratrødder. Slås det fra, beregnes decimaltilnærmelse ($\approx$).
-- **Opstillede brøker:** Vælger mellem opstillede brøker ($\frac{a}{b}$) og linjebrøker ($a/b$).
-- **Indsæt automatisk i Word:** Bestemmer om beregninger fra panelet straks skrives ind ved markøren i Word, eller kun vises i resultatkortet indtil man klikker **Indsæt i Word**.
-- **Decimaler & decimalseparator:** Vælg 0–6 decimaler (standard: 2) samt dansk komma (`,`) eller punktum (`.`).
+- **Eksakt resultat (bevar brøker, π og rødder):** Bevarer eksakte brøker, $\pi$ og kvadratrødder. Slås det fra, beregnes decimaltilnærmelse ($\approx$).
+- **Vis brøker stablet (lodret):** Vælger mellem opstillede brøker ($\frac{a}{b}$) og linjebrøker ($a/b$).
+- **Indsæt automatisk i Word ved beregning:** Bestemmer om beregninger straks skrives ind ved markøren i Word, eller kun vises i resultatkortet indtil man klikker **Indsæt i Word**.
+- **Decimaler & decimalseparator:** Vælg 0–5 decimaler (standard: 2) samt dansk komma (`,`) eller punktum (`.`).
 
 ---
 
