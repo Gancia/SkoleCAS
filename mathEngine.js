@@ -8,6 +8,12 @@
 window.calculationHistory = [];
 window.lastCalculation = null;
 let panelInputDirty = false;
+let isCalculatingInline = false;
+
+window.clearPanelCalculationState = function() {
+    window.lastCalculation = null;
+    panelInputDirty = false;
+};
 
 // ─────────────────────────────────────────────────────────────────
 //  1. CAS-ADAPTER (Isoleret beregningslag)
@@ -15,11 +21,14 @@ let panelInputDirty = false;
 
 function detectMainVariable(mathExpr) {
     try {
-        const exprForVars = mathExpr.includes('=') ? mathExpr.split('=')[0] : mathExpr;
+        const exprForVars = mathExpr.includes('=')
+            ? '(' + mathExpr.split('=')[0] + ')-(' + mathExpr.split('=').slice(1).join('=') + ')'
+            : mathExpr;
         const vars = nerdamer(exprForVars).variables();
         if (Array.isArray(vars) && vars.length > 0) {
             if (vars.includes('x')) return 'x';
-            return vars[0];
+            const nonE = vars.filter(v => v !== 'e');
+            return nonE.length > 0 ? nonE[0] : vars[0];
         }
     } catch (e) {
         // Fallback nedenfor
@@ -28,7 +37,7 @@ function detectMainVariable(mathExpr) {
     const fnNames = [
         'arcsin', 'arccos', 'arctan', 'sinh', 'cosh', 'tanh',
         'asin', 'acos', 'atan', 'sqrt', 'sin', 'cos', 'tan',
-        'cot', 'sec', 'csc', 'log', 'exp', 'abs', 'pi', 'ln'
+        'cot', 'sec', 'csc', 'log', 'exp', 'abs', 'pi', 'ln', 'e'
     ];
     let cleaned = mathExpr;
     for (const fn of fnNames) {
@@ -41,7 +50,7 @@ function detectMainVariable(mathExpr) {
 
 function roundNumbersInString(str, decimals) {
     let wasRounded = false;
-    const roundedStr = str.replace(/-?\d+\.\d+/g, function(match) {
+    const roundedStr = str.replace(/\d+\.\d+/g, function(match) {
         const originalNum = parseFloat(match);
         if (!Number.isFinite(originalNum)) return match;
         const roundedNum = window.safeRound(originalNum, decimals);
@@ -83,22 +92,21 @@ window.CAS = {
         const sep = decSep || ",";
         const stacked = isStacked !== undefined ? isStacked : true;
 
+        const supMap = {
+            '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4',
+            '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9', '⁻': '-'
+        };
+
         let s = segment.trim()
             .replace(/[\u2212\u2013\u2014]/g, '-')
             .replace(/[\u00B7\u22C5\u00D7]/g, '*')
             .replace(/[\u00F7:]/g, '/')
             .replace(/[πΠ]/g, '\\pi ')
             .replace(/(^|[^\\])\bpi\b/gi, '$1\\pi ')
-            .replace(/⁰/g, '^{0}')
-            .replace(/¹/g, '^{1}')
-            .replace(/²/g, '^{2}')
-            .replace(/³/g, '^{3}')
-            .replace(/⁴/g, '^{4}')
-            .replace(/⁵/g, '^{5}')
-            .replace(/⁶/g, '^{6}')
-            .replace(/⁷/g, '^{7}')
-            .replace(/⁸/g, '^{8}')
-            .replace(/⁹/g, '^{9}')
+            .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹⁻]+/g, (m) => {
+                const digits = m.split('').map(ch => supMap[ch] || ch).join('');
+                return `^{${digits}}`;
+            })
             .replace(/√\s*\(/g, 'sqrt(')
             .replace(/√([a-zA-Z0-9.,]+)/g, '\\sqrt{$1}');
 
@@ -181,6 +189,7 @@ window.CAS = {
         if (!rawInput || !rawInput.trim()) return "";
         let cleaned = rawInput.trim();
         if (cleaned.includes('⇒')) cleaned = cleaned.split('⇒')[0].trim();
+        if (cleaned.includes('≈')) cleaned = cleaned.split('≈')[0].trim();
 
         const sep = decSep || ",";
         const stacked = isStacked !== undefined ? isStacked : true;
@@ -220,7 +229,7 @@ window.CAS = {
         }
 
         const isFnOrYDef = /^([a-zA-Z]\s*\(\s*[a-zA-Z]\s*\)|y)\s*=/i.test(textToParse);
-        if ((actionType === 'eval' || actionType === 'approx' || actionType === 'calc') && !isFnOrYDef && textToParse.includes('=')) {
+        if ((actionType === 'eval' || actionType === 'approx' || actionType === 'calc' || actionType === 'diff' || actionType === 'int') && !isFnOrYDef && textToParse.includes('=')) {
             textToParse = textToParse.split('=')[0].trim();
         } else if (textToParse.endsWith('=')) {
             textToParse = textToParse.slice(0, -1).trim();
@@ -295,15 +304,32 @@ window.CAS = {
                 }
             }
             else if (actionType === 'diff') {
-                const exprToDiff = fnHeaderMatch ? fnHeaderMatch[3] : (yHeaderMatch ? yHeaderMatch[1] : mathExpr);
+                let exprToDiff = fnHeaderMatch ? fnHeaderMatch[3] : (yHeaderMatch ? yHeaderMatch[1] : mathExpr);
+                if (exprToDiff.includes('=')) exprToDiff = exprToDiff.split('=')[0].trim();
                 const fnName = fnHeaderMatch ? fnHeaderMatch[1] : 'f';
-                latexResult = nerdamer(`diff(${exprToDiff}, ${mainVar})`).evaluate().toTeX();
+                const diffEvaluated = nerdamer(`diff(${exprToDiff}, ${mainVar})`).evaluate();
+                if (isExact) {
+                    latexResult = diffEvaluated.toTeX();
+                } else {
+                    const decimalStr = diffEvaluated.text('decimals');
+                    const { text: roundedStr } = roundNumbersInString(decimalStr, decimals);
+                    latexResult = nerdamer(roundedStr).toTeX('decimals');
+                }
                 prefix = `\\Rightarrow ${fnName}'(${mainVar}) = `;
             }
             else if (actionType === 'int') {
-                const exprToInt = fnHeaderMatch ? fnHeaderMatch[3] : (yHeaderMatch ? yHeaderMatch[1] : mathExpr);
-                latexResult = nerdamer(`integrate(${exprToInt}, ${mainVar})`).toTeX() + " + C";
-                prefix = `\\Rightarrow \\int f(${mainVar})\\,d${mainVar} = `;
+                let exprToInt = fnHeaderMatch ? fnHeaderMatch[3] : (yHeaderMatch ? yHeaderMatch[1] : mathExpr);
+                if (exprToInt.includes('=')) exprToInt = exprToInt.split('=')[0].trim();
+                const fnName = fnHeaderMatch ? fnHeaderMatch[1] : 'f';
+                const intEvaluated = nerdamer(`integrate(${exprToInt}, ${mainVar})`);
+                if (isExact) {
+                    latexResult = intEvaluated.toTeX() + " + C";
+                } else {
+                    const decimalStr = intEvaluated.text('decimals');
+                    const { text: roundedStr } = roundNumbersInString(decimalStr, decimals);
+                    latexResult = nerdamer(roundedStr).toTeX('decimals') + " + C";
+                }
+                prefix = `\\Rightarrow \\int ${fnName}(${mainVar})\\,d${mainVar} = `;
             }
             else {
                 throw new Error("Ukendt beregningstype: " + actionType);
@@ -365,18 +391,14 @@ window.CAS = {
     }
 };
 
-// Bagudkompatible globale funktioner
-window.expressionToPreviewLatex = window.CAS.toPreviewLatex;
-window.evaluateMath = window.CAS.execute;
-
 // ─────────────────────────────────────────────────────────────────
 //  2. WORDBRIDGE (To-vejs læsning & skrivning af OMML i Word)
 // ─────────────────────────────────────────────────────────────────
 
 window.WordBridge = {
     /**
-     * Læser matematisk udtryk fra Word (både rigtige <m:oMath>-ligninger og rå tekst!).
-     * Returnerer { expr: string, sourceMode: 'word-highlight'|'word-line'|null, rawHighlightedText: string }
+     * Læser matematisk udtryk fra Word (både rigtige <m:oMath>-ligninger og rå tekst).
+     * Returnerer { expr: string, sourceMode: 'word-highlight'|'word-line'|null, rawHighlightedText: string, hasColonPrefix: boolean }
      */
     readExpressionFromWord: async function(context) {
         const selection = context.document.getSelection();
@@ -391,7 +413,8 @@ window.WordBridge = {
                 return {
                     expr: ommlExpr,
                     sourceMode: "word-highlight",
-                    rawHighlightedText: selection.text ? selection.text.trim() : ""
+                    rawHighlightedText: selection.text ? selection.text.trim() : "",
+                    hasColonPrefix: false
                 };
             }
         }
@@ -402,16 +425,23 @@ window.WordBridge = {
             return {
                 expr: highlightedText,
                 sourceMode: "word-highlight",
-                rawHighlightedText: highlightedText
+                rawHighlightedText: highlightedText,
+                hasColonPrefix: false
             };
         }
 
-        // 3. Ingen markering: Tjek aktuelt afsnit for enten en <m:oMath>-ligning eller tekst før markøren
+        // 3. Ingen markering: Tjek aktuelt afsnit for enten tekst før markøren eller en <m:oMath>-ligning
         const paragraph = selection.paragraphs.getFirst();
         const rangeBeforeCursor = selection.expandTo(paragraph.getRange("Start"));
         rangeBeforeCursor.load("text");
         const paraOoxml = paragraph.getOoxml();
         await context.sync();
+
+        const rawBeforeCursor = rangeBeforeCursor.text ? rangeBeforeCursor.text.trim() : "";
+        const hasColonPrefix = rawBeforeCursor.includes(":");
+        const textAfterColon = hasColonPrefix
+            ? rawBeforeCursor.substring(rawBeforeCursor.lastIndexOf(":") + 1).trim()
+            : rawBeforeCursor;
 
         if (window.ommlToExpression && paraOoxml && paraOoxml.value) {
             const paraOmmlExpr = window.ommlToExpression(paraOoxml.value);
@@ -419,24 +449,22 @@ window.WordBridge = {
                 return {
                     expr: paraOmmlExpr,
                     sourceMode: "word-line",
-                    rawHighlightedText: ""
+                    rawHighlightedText: "",
+                    hasColonPrefix
                 };
             }
         }
 
-        let lineText = rangeBeforeCursor.text ? rangeBeforeCursor.text.trim() : "";
-        if (lineText.includes(":")) {
-            lineText = lineText.substring(lineText.lastIndexOf(":") + 1).trim();
-        }
-        if (lineText) {
+        if (textAfterColon) {
             return {
-                expr: lineText,
+                expr: textAfterColon,
                 sourceMode: "word-line",
-                rawHighlightedText: ""
+                rawHighlightedText: "",
+                hasColonPrefix
             };
         }
 
-        return { expr: "", sourceMode: null, rawHighlightedText: "" };
+        return { expr: "", sourceMode: null, rawHighlightedText: "", hasColonPrefix: false };
     },
 
     /**
@@ -557,7 +585,7 @@ window.WordBridge = {
                     paragraph.insertOoxml(newOoxml, "Replace");
                     await context.sync();
 
-                    // Lås op og fjern enhver tilbageværende Content Control-ramme (bevar selve ligningen med delete(true))
+                    // Lås op og fjern enhver tilbageværende midlertidig Content Control-ramme (bevar selve ligningen med delete(true))
                     try {
                         const sel = context.document.getSelection();
                         const parentCc = sel.parentContentControlOrNullObject;
@@ -575,7 +603,7 @@ window.WordBridge = {
 
                         for (let i = 0; i < docCcs.items.length; i++) {
                             const item = docCcs.items[i];
-                            if (!item.tag || item.tag.startsWith("MATH_TARGET_")) {
+                            if (item.tag && item.tag.startsWith("MATH_TARGET_")) {
                                 item.cannotDelete = false;
                                 item.cannotEdit = false;
                                 item.delete(true);
@@ -697,9 +725,8 @@ window.updateMathPreview = function() {
     }
 };
 
-function renderResultInPanel(calcObj) {
+function renderResultInPanel(calcObj, skipHistoryPush) {
     window.lastCalculation = calcObj;
-    window.currentResult = " " + calcObj.fallbackText;
 
     const resultCard = document.getElementById("calcResultCard");
     const resultMathEl = document.getElementById("calcResultMath");
@@ -717,6 +744,16 @@ function renderResultInPanel(calcObj) {
         insertBtn.disabled = false;
     }
 
+    if (skipHistoryPush) {
+        if (window.calculationHistory.length > 0 &&
+            window.calculationHistory[0].rawInput === calcObj.rawInput &&
+            window.calculationHistory[0].actionType === calcObj.actionType) {
+            window.calculationHistory[0] = calcObj;
+            renderHistoryList();
+        }
+        return;
+    }
+
     if (
         window.calculationHistory.length === 0 ||
         window.calculationHistory[0].fullLatex !== calcObj.fullLatex
@@ -728,6 +765,29 @@ function renderResultInPanel(calcObj) {
         renderHistoryList();
     }
 }
+
+/**
+ * Genberegner det aktive resultat i panelet øjeblikkeligt, når brugeren ændrer
+ * indstillinger (Eksakt resultat, Opstillede brøker, Antal decimaler, Decimalseparator).
+ */
+window.refreshLastCalculationForSettings = function() {
+    if (window.lastCalculation && window.lastCalculation.rawInput && window.lastCalculation.actionType) {
+        try {
+            const opts = window.getCalcOptions();
+            const updatedCalc = window.CAS.execute(
+                window.lastCalculation.rawInput,
+                window.lastCalculation.actionType,
+                opts
+            );
+            renderResultInPanel(updatedCalc, true);
+        } catch (e) {
+            // Ignorér hvis genberegning fejler
+        }
+    }
+    if (window.refreshTriangleDisplay) {
+        window.refreshTriangleDisplay();
+    }
+};
 
 function renderHistoryList() {
     const container = document.getElementById("calcHistoryList");
@@ -760,7 +820,7 @@ function renderHistoryList() {
                 inputEl.value = item.rawInput;
                 panelInputDirty = true;
                 window.updateMathPreview();
-                renderResultInPanel(item);
+                renderResultInPanel(item, true);
             }
         });
 
@@ -828,17 +888,11 @@ window.insertCalcObjectToWord = async function(calcObj) {
     try {
         await Word.run(async (context) => {
             const selection = context.document.getSelection();
-            selection.load("text");
-            await context.sync();
-
-            const hasSelection = selection.text.trim().length > 0;
             await window.WordBridge.insertMathInWord(
                 context,
                 selection,
                 targetCalc.fullLatex,
-                targetCalc.fullFallbackText,
-                hasSelection,
-                selection.text.trim()
+                targetCalc.fullFallbackText
             );
             await window.ensureFooter(context);
         });
@@ -849,6 +903,9 @@ window.insertCalcObjectToWord = async function(calcObj) {
 };
 
 window.calculateInline = async function(actionType) {
+    if (isCalculatingInline) return;
+    isCalculatingInline = true;
+
     const errorBox = document.getElementById("inlineError");
     if (errorBox) errorBox.textContent = "";
 
@@ -858,17 +915,13 @@ window.calculateInline = async function(actionType) {
     const autoInsertToggle = document.getElementById("autoInsertToggle");
     const autoInsert = autoInsertToggle ? autoInsertToggle.checked : true;
 
-    if (!window.isOfficeReady || !window.Word) {
-        try {
+    try {
+        if (!window.isOfficeReady || !window.Word) {
             const calcObj = window.CAS.execute(panelText, actionType, opts);
             renderResultInPanel(calcObj);
-        } catch (err) {
-            if (errorBox) errorBox.textContent = err.message;
+            return;
         }
-        return;
-    }
 
-    try {
         await Word.run(async (context) => {
             const selection = context.document.getSelection();
             const wordData = await window.WordBridge.readExpressionFromWord(context);
@@ -901,6 +954,10 @@ window.calculateInline = async function(actionType) {
             const calcObj = window.CAS.execute(exprToCalculate, actionType, opts);
             renderResultInPanel(calcObj);
 
+            if (!autoInsert) {
+                return;
+            }
+
             if (sourceMode === "word-highlight") {
                 await window.WordBridge.insertMathInWord(
                     context,
@@ -910,19 +967,29 @@ window.calculateInline = async function(actionType) {
                 );
                 await window.ensureFooter(context);
             } else if (sourceMode === "word-line") {
-                const lineParagraph = context.document.getSelection().paragraphs.getFirst();
-                const lineRange = lineParagraph.getRange("Content");
-                lineRange.select();
-                await context.sync();
+                if (wordData.hasColonPrefix) {
+                    // Bevar præfikset før kolon (f.eks. "Opgave 2b: ") og indsæt kun svaret ved markøren
+                    await window.WordBridge.insertMathInWord(
+                        context,
+                        selection,
+                        calcObj.answerOnlyLatex,
+                        " " + calcObj.fallbackText
+                    );
+                } else {
+                    const lineParagraph = context.document.getSelection().paragraphs.getFirst();
+                    const lineRange = lineParagraph.getRange("Content");
+                    lineRange.select();
+                    await context.sync();
 
-                await window.WordBridge.insertMathInWord(
-                    context,
-                    lineRange,
-                    calcObj.fullLatex,
-                    calcObj.fullFallbackText
-                );
+                    await window.WordBridge.insertMathInWord(
+                        context,
+                        lineRange,
+                        calcObj.fullLatex,
+                        calcObj.fullFallbackText
+                    );
+                }
                 await window.ensureFooter(context);
-            } else if (sourceMode === "panel" && autoInsert) {
+            } else if (sourceMode === "panel") {
                 await window.WordBridge.insertMathInWord(
                     context,
                     selection,
@@ -935,14 +1002,9 @@ window.calculateInline = async function(actionType) {
     } catch (error) {
         console.error(error);
         if (errorBox) errorBox.textContent = error.message;
+    } finally {
+        isCalculatingInline = false;
     }
-};
-
-window.calculateDraft = function() {
-    window.calculateInline('eval');
-};
-window.insertToWord = function() {
-    window.insertCalcObjectToWord(window.lastCalculation);
 };
 
 document.addEventListener("DOMContentLoaded", function() {
@@ -956,7 +1018,8 @@ document.addEventListener("DOMContentLoaded", function() {
             if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 const raw = inputEl.value.trim();
-                if (raw.includes("=")) {
+                const isFnOrYDef = /^([a-zA-Z]\s*\(\s*[a-zA-Z]\s*\)|y)\s*=/i.test(raw);
+                if (raw.includes("=") && !raw.endsWith("=") && !isFnOrYDef) {
                     window.calculateInline('solve');
                 } else {
                     window.calculateInline('eval');
@@ -965,3 +1028,4 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     }
 });
+

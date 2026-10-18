@@ -21,7 +21,7 @@ window.normalizeInput = function(expr) {
     s = s
         .replace(/[−–—]/g, '-')
         .replace(/[·⋅×]/g, '*')
-        .replace(/÷/g, '/');
+        .replace(/[÷:]/g, '/');
 
     // Konverter Unicode-eksponenter (f.eks. x² → x^2)
     const superscriptMap = {
@@ -52,13 +52,11 @@ window.normalizeInput = function(expr) {
  * Konverterer dansk decimalkomma til punktum mellem cifre (f.eks. "3,14" → "3.14").
  * Kører i en løkke så tal med flere grupper håndteres korrekt.
  *
- * @param {string} expr   - Matematisk udtryk
- * @param {string} decSep - Valgt decimalseparator (',' eller '.')
+ * @param {string} expr - Matematisk udtryk
  * @returns {string}
  */
-window.convertDanishDecimalToDot = function(expr, decSep) {
+window.convertDanishDecimalToDot = function(expr) {
     if (!expr || typeof expr !== 'string') return "";
-    if (decSep !== ",") return expr;
     let prev = "";
     let curr = expr;
     while (curr !== prev) {

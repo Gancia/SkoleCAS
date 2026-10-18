@@ -12,13 +12,6 @@
  *     tidligere SkoleCAS-resultater) tilbage til et regnbart udtryk, præcis som WordMat.
  */
 
-window.ommlConverterReady = true;
-window.ommlConverterError = null;
-
-window.ensureOmmlReady = async function() {
-    return true;
-};
-
 // ─────────────────────────────────────────────────────────────────
 //  Hjælpefunktioner til XML
 // ─────────────────────────────────────────────────────────────────
@@ -359,35 +352,6 @@ window.latexToOmmlString = function(latexStr) {
     return `<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">${inner}</m:oMath>`;
 };
 
-/**
- * Pakker et OMML-fragment i en Flat OPC Word-pakke.
- */
-function buildFlatOpc(ommlString) {
-    return `<?xml version="1.0" standalone="yes"?>
-<pkg:package xmlns:pkg="http://schemas.microsoft.com/office/2006/xmlPackage">
-  <pkg:part pkg:name="/word/document.xml"
-            pkg:contentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml">
-    <pkg:xmlData>
-      <w:document
-        xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-        xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"
-        xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-        <w:body>
-          <w:p>
-            ${ommlString}
-          </w:p>
-        </w:body>
-      </w:document>
-    </pkg:xmlData>
-  </pkg:part>
-</pkg:package>`;
-}
-
-window.latexToOoxml = function(latexStr) {
-    const omml = window.latexToOmmlString(latexStr);
-    return buildFlatOpc(omml);
-};
-
 // ─────────────────────────────────────────────────────────────────
 //  DEL 2: OMML -> Matematisk Udtryk Læser (Læser rigtige Word-ligninger!)
 // ─────────────────────────────────────────────────────────────────
@@ -464,10 +428,14 @@ function parseOmmlDomNode(node) {
     // Sub- og Superscript: <m:sSubSup>
     if (local === "sSubSup") {
         const eNode = findDirectChild(node, "e");
+        const subNode = findDirectChild(node, "sub");
         const supNode = findDirectChild(node, "sup");
-        const base = wrapIfCompound(parseOmmlChildren(eNode));
-        const sup = wrapIfCompound(parseOmmlChildren(supNode));
-        return `${base}^${sup}`;
+        const rawBase = parseOmmlChildren(eNode).trim();
+        const rawSub = subNode ? parseOmmlChildren(subNode).trim() : "";
+        const baseWithSub = rawSub ? `${rawBase}_${rawSub}` : rawBase;
+        const supRaw = parseOmmlChildren(supNode).trim();
+        const sup = /^[a-zA-Z0-9]+$/.test(supRaw) ? supRaw : `(${supRaw})`;
+        return `${wrapIfCompound(baseWithSub)}^${sup}`;
     }
 
     // Kvadratrod / n'te rod: <m:rad><m:deg>...</m:deg><m:e>...</m:e></m:rad>
@@ -512,10 +480,14 @@ function parseOmmlDomNode(node) {
         const eNode = findDirectChild(node, "e");
         const fnName = parseOmmlChildren(fNameNode).trim();
         const arg = parseOmmlChildren(eNode).trim();
-        if (isFullyWrappedInParens(arg)) {
-            return `${fnName}${arg}`;
+        const wrappedArg = isFullyWrappedInParens(arg) ? arg : `(${arg})`;
+
+        // Håndter potens på funktion, f.eks. sin^2(x) -> (sin(x))^2
+        const fnPowMatch = fnName.match(/^([a-zA-Z]+)\^(.+)$/);
+        if (fnPowMatch) {
+            return `(${fnPowMatch[1]}${wrappedArg})^${fnPowMatch[2]}`;
         }
-        return `${fnName}(${arg})`;
+        return `${fnName}${wrappedArg}`;
     }
 
     // Tekst-node (<m:t> eller <w:t>)
@@ -537,8 +509,7 @@ function parseOmmlChildren(parent) {
 
 /**
  * Udtrækker et matematisk udtryk fra en OOXML-streng (f.eks. fra selection.getOoxml()).
- * Hvis OOXML'en indeholder et eller flere <m:oMath>-elementer, konverteres de til
- * korrekt matematisk syntaks med brøker, potenser og rødder bevaret!
+ * Hvis der er flere <m:oMath>-elementer i et afsnit, tages det sidste (nærmest markøren).
  * Returnerer null hvis der ingen <m:oMath> er i OOXML'en.
  */
 window.ommlToExpression = function(ooxmlString) {
@@ -565,12 +536,16 @@ window.ommlToExpression = function(ooxmlString) {
 
         if (expressions.length === 0) return null;
 
-        let combined = expressions.join(" ").replace(/\s+/g, " ").trim();
+        // Brug det sidste <m:oMath>-element i udtrækket (så flere formler i samme afsnit ikke klistres sammen)
+        let combined = expressions[expressions.length - 1].replace(/\s+/g, " ").trim();
 
-        // Hvis ligningen allerede indeholder en tidligere pil-løsning (f.eks. "2x+5=15 ⇒ x=5"),
-        // behold selve opgave-udtrykket før pilen, så eleven kan regne videre på det!
+        // Hvis ligningen allerede indeholder en tidligere pil-løsning eller tilnærmelse,
+        // behold selve opgave-udtrykket før pilen/tilnærmelsen, så eleven kan regne videre på det!
         if (combined.includes("⇒")) {
             combined = combined.split("⇒")[0].trim();
+        }
+        if (combined.includes("≈")) {
+            combined = combined.split("≈")[0].trim();
         }
         // Tilføj parentes omkring funktionsargumenter hvis Word havde "sin x" uden parentes
         combined = combined.replace(/\b(sin|cos|tan|ln|log|sqrt)\s+([a-zA-Z0-9]+)\b/g, '$1($2)');
@@ -611,68 +586,67 @@ window.formatFractions = function(fullLatex, isStacked) {
 
         while (index !== -1 && safetyCounter < 100) {
             safetyCounter++;
+
+            // Scan venstre side (tæller): håndterer balancerede (...), {...} samt funktionsnavne og potenser
             let leftStart = index - 1;
-            let num = '';
-            if (leftStart >= 0 && result[leftStart] === ')') {
-                let depth = 1;
-                leftStart--;
-                while (leftStart >= 0 && depth > 0) {
-                    if (result[leftStart] === ')') depth++;
-                    else if (result[leftStart] === '(') depth--;
+            while (leftStart >= 0) {
+                if (result[leftStart] === ')') {
+                    let parenDepth = 1;
                     leftStart--;
-                }
-                leftStart++;
-                num = result.substring(leftStart + 1, index - 1);
-            } else {
-                while (leftStart >= 0) {
-                    if (result[leftStart] === '}') {
-                        let braceDepth = 1;
+                    while (leftStart >= 0 && parenDepth > 0) {
+                        if (result[leftStart] === ')') parenDepth++;
+                        else if (result[leftStart] === '(') parenDepth--;
                         leftStart--;
-                        while (leftStart >= 0 && braceDepth > 0) {
-                            if (result[leftStart] === '}') braceDepth++;
-                            else if (result[leftStart] === '{') braceDepth--;
-                            leftStart--;
-                        }
-                    } else if (/[a-zA-Z0-9_.,\\^]/.test(result[leftStart])) {
-                        leftStart--;
-                    } else {
-                        break;
                     }
+                } else if (result[leftStart] === '}') {
+                    let braceDepth = 1;
+                    leftStart--;
+                    while (leftStart >= 0 && braceDepth > 0) {
+                        if (result[leftStart] === '}') braceDepth++;
+                        else if (result[leftStart] === '{') braceDepth--;
+                        leftStart--;
+                    }
+                } else if (/[a-zA-Z0-9_.,\\^]/.test(result[leftStart])) {
+                    leftStart--;
+                } else {
+                    break;
                 }
-                leftStart++;
-                num = result.substring(leftStart, index);
+            }
+            leftStart++;
+            let num = result.substring(leftStart, index).trim();
+            if (isFullyWrappedInParens(num)) {
+                num = num.slice(1, -1).trim();
             }
 
+            // Scan højre side (nævner): håndterer balancerede (...), {...} samt funktionsnavne og potenser
             let rightEnd = index + 1;
-            let den = '';
-            if (rightEnd < result.length && result[rightEnd] === '(') {
-                let depth = 1;
-                rightEnd++;
-                while (rightEnd < result.length && depth > 0) {
-                    if (result[rightEnd] === '(') depth++;
-                    else if (result[rightEnd] === ')') depth--;
+            while (rightEnd < result.length) {
+                if (result[rightEnd] === '(') {
+                    let parenDepth = 1;
                     rightEnd++;
-                }
-                rightEnd--;
-                den = result.substring(index + 2, rightEnd);
-            } else {
-                while (rightEnd < result.length) {
-                    if (result[rightEnd] === '{') {
-                        let braceDepth = 1;
+                    while (rightEnd < result.length && parenDepth > 0) {
+                        if (result[rightEnd] === '(') parenDepth++;
+                        else if (result[rightEnd] === ')') parenDepth--;
                         rightEnd++;
-                        while (rightEnd < result.length && braceDepth > 0) {
-                            if (result[rightEnd] === '{') braceDepth++;
-                            else if (result[rightEnd] === '}') braceDepth--;
-                            rightEnd++;
-                        }
-                    } else if (/[a-zA-Z0-9_.,\\^]/.test(result[rightEnd])) {
-                        rightEnd++;
-                    } else {
-                        break;
                     }
+                } else if (result[rightEnd] === '{') {
+                    let braceDepth = 1;
+                    rightEnd++;
+                    while (rightEnd < result.length && braceDepth > 0) {
+                        if (result[rightEnd] === '{') braceDepth++;
+                        else if (result[rightEnd] === '}') braceDepth--;
+                        rightEnd++;
+                    }
+                } else if (/[a-zA-Z0-9_.,\\^]/.test(result[rightEnd])) {
+                    rightEnd++;
+                } else {
+                    break;
                 }
-                rightEnd--;
-                den = result.substring(index + 1, rightEnd + 1);
+            }
+            rightEnd--;
+            let den = result.substring(index + 1, rightEnd + 1).trim();
+            if (isFullyWrappedInParens(den)) {
+                den = den.slice(1, -1).trim();
             }
 
             if (leftStart < index && rightEnd > index && num && den) {

@@ -2,9 +2,8 @@
 // HOVEDMODUL – UI-INITIALISERING & WORD HJÆLPERE
 // ==========================================
 
-window.currentResult = "";
 window.isOfficeReady = false;
-let lastFocusedPanelInput = null;
+let footerEnsured = false;
 
 if (typeof Office !== "undefined" && Office.onReady) {
     Office.onReady(function(info) {
@@ -44,33 +43,50 @@ window.switchTab = function(tabId, btnElement) {
 };
 
 /**
- * Indsætter et matematisk symbol enten i panelets inputfelt eller ved markøren i Word.
+ * Indsætter et matematisk symbol i panelets inputfelt.
+ * Hvis brugeren har markeret tekst i feltet og klikker f.eks. √(x), pakkes markeringen ind i √(...).
  */
-window.insertSymbol = async function(symbol) {
+window.insertSymbol = function(symbol) {
     const errorBox = document.getElementById("inlineError");
     if (errorBox) errorBox.textContent = "";
 
     const inputEl = document.getElementById("mathInput");
+    if (!inputEl) return;
 
-    if (inputEl) {
-        const start = typeof inputEl.selectionStart === "number" ? inputEl.selectionStart : inputEl.value.length;
-        const end = typeof inputEl.selectionEnd === "number" ? inputEl.selectionEnd : inputEl.value.length;
-        const val = inputEl.value;
-        inputEl.value = val.slice(0, start) + symbol + val.slice(end);
+    const start = typeof inputEl.selectionStart === "number" ? inputEl.selectionStart : inputEl.value.length;
+    const end = typeof inputEl.selectionEnd === "number" ? inputEl.selectionEnd : inputEl.value.length;
+    const val = inputEl.value;
+    const selectedText = val.slice(start, end);
 
-        // Hvis symbolet ender på "()", placér markøren inde i parentesen
-        const newPos = symbol.endsWith("()") ? start + symbol.length - 1 : start + symbol.length;
-        inputEl.focus();
-        inputEl.setSelectionRange(newPos, newPos);
-        inputEl.dispatchEvent(new Event("input", { bubbles: true }));
-        return;
+    let replacement = symbol;
+    let newPos = start + symbol.length;
+
+    if (selectedText && symbol.endsWith("()")) {
+        const prefix = symbol.slice(0, -1);
+        replacement = prefix + selectedText + ")";
+        newPos = start + replacement.length;
+    } else if (selectedText && symbol.startsWith("^")) {
+        const wrapped = selectedText.length > 1 && !(selectedText.startsWith("(") && selectedText.endsWith(")"))
+            ? `(${selectedText})`
+            : selectedText;
+        replacement = wrapped + symbol;
+        newPos = start + replacement.length;
+    } else if (symbol.endsWith("()")) {
+        newPos = start + symbol.length - 1;
     }
+
+    inputEl.value = val.slice(0, start) + replacement + val.slice(end);
+    inputEl.focus();
+    inputEl.setSelectionRange(newPos, newPos);
+    inputEl.dispatchEvent(new Event("input", { bubbles: true }));
 };
 
 /**
  * Sikrer at dokumentets sidefod indeholder "Løst med Skole CAS".
+ * Cacher status i sessionen, så vi undgår unødig context.sync() ved efterfølgende beregninger.
  */
 window.ensureFooter = async function(context) {
+    if (footerEnsured) return;
     try {
         const section = context.document.sections.getFirst();
         const footer = section.getFooter("Primary");
@@ -84,6 +100,7 @@ window.ensureFooter = async function(context) {
             p.alignment = "Right";
             await context.sync();
         }
+        footerEnsured = true;
     } catch (e) {
         console.warn("Kunne ikke opdatere sidefod:", e);
     }
@@ -163,45 +180,62 @@ window.toggleTheme = function() {
     }
 };
 
+function saveSetting(key, val) {
+    try {
+        localStorage.setItem("skolecas_" + key, String(val));
+    } catch (e) {
+        // Ignorér hvis localStorage er blokeret
+    }
+}
+
+function loadSetting(key) {
+    try {
+        return localStorage.getItem("skolecas_" + key);
+    } catch (e) {
+        return null;
+    }
+}
+
 document.addEventListener("DOMContentLoaded", function() {
     // Indlæs gemt tema
-    try {
-        const savedTheme = localStorage.getItem("theme");
-        if (savedTheme) {
-            applyTheme(savedTheme);
-        } else {
-            applyTheme("light");
-        }
-    } catch (e) {
-        applyTheme("light");
-    }
+    const savedTheme = loadSetting("theme") || (function() {
+        try { return localStorage.getItem("theme"); } catch (e) { return null; }
+    })();
+    applyTheme(savedTheme || "light");
 
     const themeToggle = document.getElementById("themeToggle");
     if (themeToggle) {
         themeToggle.addEventListener("click", window.toggleTheme);
     }
 
-    // Faneblade
-    const tabBtns = document.querySelectorAll('.tab-btn');
-    for (let i = 0; i < tabBtns.length; i++) {
-        tabBtns[i].addEventListener('click', function() {
+    // Faneblade med klik og piletast-navigation
+    const tabBtns = Array.from(document.querySelectorAll('.tab-btn'));
+    tabBtns.forEach((btn, idx) => {
+        btn.addEventListener('click', function() {
             window.switchTab(this.getAttribute('data-tab'), this);
         });
-    }
-
-    // Husk fokus på panelets matematikfelt for symbolknapper
-    const mathInput = document.getElementById("mathInput");
-    if (mathInput) {
-        mathInput.addEventListener("focus", function() {
-            lastFocusedPanelInput = mathInput;
+        btn.addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                e.preventDefault();
+                const nextIdx = e.key === 'ArrowRight'
+                    ? (idx + 1) % tabBtns.length
+                    : (idx - 1 + tabBtns.length) % tabBtns.length;
+                const nextBtn = tabBtns[nextIdx];
+                if (nextBtn) {
+                    window.switchTab(nextBtn.getAttribute('data-tab'), nextBtn);
+                    nextBtn.focus();
+                }
+            }
         });
-    }
+    });
+
+    const mathInput = document.getElementById("mathInput");
 
     // Symbolknapper (data-symbol attribut)
     const symbolBtns = document.querySelectorAll('[data-symbol]');
     for (let i = 0; i < symbolBtns.length; i++) {
         symbolBtns[i].addEventListener("mousedown", function(e) {
-            // Forhindr at klikket fjerner fokus fra mathInput
+            // Forhindr at klikket fjerner fokus/markering fra mathInput
             e.preventDefault();
         });
         symbolBtns[i].addEventListener("click", function() {
@@ -232,39 +266,91 @@ document.addEventListener("DOMContentLoaded", function() {
             if (window.updateMathPreview) window.updateMathPreview();
             mathInput.focus();
         }
+        if (window.clearPanelCalculationState) {
+            window.clearPanelCalculationState();
+        }
         const err = document.getElementById("inlineError");
         if (err) err.textContent = "";
+        const resultCard = document.getElementById("calcResultCard");
+        if (resultCard) resultCard.classList.add("hidden");
+        const insertBtn = document.getElementById("insertResultToWordBtn");
+        if (insertBtn) insertBtn.disabled = true;
+        const ggbNotice = document.getElementById("ggbCopyNotice");
+        if (ggbNotice) ggbNotice.classList.add("hidden");
     });
     bindClick("insertResultToWordBtn", () => {
         if (window.insertCalcObjectToWord) window.insertCalcObjectToWord(window.lastCalculation);
     });
 
-    // Indstillinger i Beregner
+    // Indstillinger i Beregner (med localStorage-persistens og øjeblikkelig genberegning)
     const exactToggle = document.getElementById("exactToggle");
     const decimalOptions = document.getElementById("decimalOptions");
     const stackedToggle = document.getElementById("stackedFractionToggle");
+    const autoInsertToggle = document.getElementById("autoInsertToggle");
     const decimalSelect = document.getElementById("decimalSelect");
     const separatorSelect = document.getElementById("decimalSeparator");
+
+    const savedExact = loadSetting("exact");
+    if (exactToggle && savedExact !== null) {
+        exactToggle.checked = savedExact === "true";
+    }
+    if (exactToggle && decimalOptions) {
+        decimalOptions.style.display = exactToggle.checked ? "none" : "flex";
+    }
+
+    const savedStacked = loadSetting("stacked");
+    if (stackedToggle && savedStacked !== null) {
+        stackedToggle.checked = savedStacked === "true";
+    }
+
+    const savedAutoInsert = loadSetting("autoInsert");
+    if (autoInsertToggle && savedAutoInsert !== null) {
+        autoInsertToggle.checked = savedAutoInsert === "true";
+    }
+
+    const savedDecimals = loadSetting("decimals");
+    if (decimalSelect && savedDecimals !== null) {
+        decimalSelect.value = savedDecimals;
+    }
+
+    const savedSep = loadSetting("decSep");
+    if (separatorSelect && savedSep !== null) {
+        separatorSelect.value = savedSep;
+    }
+
+    const onSettingsChanged = () => {
+        if (window.updateMathPreview) window.updateMathPreview();
+        if (window.refreshLastCalculationForSettings) window.refreshLastCalculationForSettings();
+    };
 
     if (exactToggle && decimalOptions) {
         exactToggle.addEventListener("change", function() {
             decimalOptions.style.display = this.checked ? "none" : "flex";
-            if (window.updateMathPreview) window.updateMathPreview();
+            saveSetting("exact", this.checked);
+            onSettingsChanged();
         });
     }
     if (stackedToggle) {
-        stackedToggle.addEventListener("change", () => {
-            if (window.updateMathPreview) window.updateMathPreview();
+        stackedToggle.addEventListener("change", function() {
+            saveSetting("stacked", this.checked);
+            onSettingsChanged();
+        });
+    }
+    if (autoInsertToggle) {
+        autoInsertToggle.addEventListener("change", function() {
+            saveSetting("autoInsert", this.checked);
         });
     }
     if (decimalSelect) {
-        decimalSelect.addEventListener("change", () => {
-            if (window.updateMathPreview) window.updateMathPreview();
+        decimalSelect.addEventListener("change", function() {
+            saveSetting("decimals", this.value);
+            onSettingsChanged();
         });
     }
     if (separatorSelect) {
-        separatorSelect.addEventListener("change", () => {
-            if (window.updateMathPreview) window.updateMathPreview();
+        separatorSelect.addEventListener("change", function() {
+            saveSetting("decSep", this.value);
+            onSettingsChanged();
         });
     }
 
@@ -288,3 +374,4 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     }
 });
+

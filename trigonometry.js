@@ -3,6 +3,8 @@
 // ==========================================
 
 window.lastTriangleSolutions = [];
+let lastTriangleIsAmbiguousSSA = false;
+let isSolvingTriangle = false;
 
 /**
  * Forsøger at fuldende en trekant fra 3 kendte værdier.
@@ -133,14 +135,19 @@ function isSameSolution(sol1, sol2) {
 }
 
 /**
- * Formaterer et tal til dansk visning (op til 2 decimaler, uden overflødige nuller).
+ * Formaterer et tal efter brugerens valgte antal decimaler og decimalseparator.
  */
 function fmtTriNum(n) {
+    const opts = window.getCalcOptions ? window.getCalcOptions() : { decimals: 2, decSep: ',' };
+    const decimals = Number.isFinite(opts.decimals) ? opts.decimals : 2;
+    const decSep = opts.decSep || ',';
+
     if (window.formatNumber) {
-        return window.formatNumber(n, 2, ',', false);
+        return window.formatNumber(n, decimals, decSep, false);
     }
-    const r = Math.round(n * 100) / 100;
-    return r.toFixed(2).replace(/(\.\d*[1-9])0+$/, '$1').replace(/\.0*$/, '').replace('.', ',');
+    const factor = Math.pow(10, decimals);
+    const r = Math.round(n * factor) / factor;
+    return r.toFixed(decimals).replace(/(\.\d*[1-9])0+$/, '$1').replace(/\.0*$/, '').replace('.', decSep);
 }
 
 /**
@@ -232,6 +239,7 @@ function buildTriangleSvg(sol) {
  */
 function renderTriangleResultsInPanel(solutions, isAmbiguousSSA) {
     window.lastTriangleSolutions = solutions;
+    lastTriangleIsAmbiguousSSA = Boolean(isAmbiguousSSA);
     const container = document.getElementById("triResultContainer");
     if (!container) return;
 
@@ -299,110 +307,126 @@ function renderTriangleResultsInPanel(solutions, isAmbiguousSSA) {
     });
 }
 
+window.refreshTriangleDisplay = function() {
+    if (window.lastTriangleSolutions && window.lastTriangleSolutions.length > 0) {
+        renderTriangleResultsInPanel(window.lastTriangleSolutions, lastTriangleIsAmbiguousSSA);
+    }
+};
+
 // ==========================================
 // HOVED-FUNKTION
 // ==========================================
-window.solveTriangle = function() {
-    const errorBox = document.getElementById("triError");
-    if (errorBox) errorBox.textContent = "";
-    const resultContainer = document.getElementById("triResultContainer");
+window.solveTriangle = async function() {
+    if (isSolvingTriangle) return;
+    isSolvingTriangle = true;
 
-    const DEG = Math.PI / 180;
-    const readNum = (id) => {
-        const el = document.getElementById(id);
-        if (!el) return null;
-        return window.parseDanishNumber ? window.parseDanishNumber(el.value) : null;
-    };
+    try {
+        const errorBox = document.getElementById("triError");
+        if (errorBox) errorBox.textContent = "";
+        const resultContainer = document.getElementById("triResultContainer");
 
-    // Tjek først om nogen felter har ugyldige tegn (ikke-tomme men ikke gyldigt tal)
-    const fieldDefs = [
-        { id: "tri_a", name: "side a" },
-        { id: "tri_b", name: "side b" },
-        { id: "tri_c", name: "side c" },
-        { id: "tri_A", name: "vinkel A" },
-        { id: "tri_B", name: "vinkel B" },
-        { id: "tri_C", name: "vinkel C" }
-    ];
+        const DEG = Math.PI / 180;
+        const readNum = (id) => {
+            const el = document.getElementById(id);
+            if (!el) return null;
+            return window.parseDanishNumber ? window.parseDanishNumber(el.value) : null;
+        };
 
-    for (const f of fieldDefs) {
-        const el = document.getElementById(f.id);
-        if (el && el.value.trim() !== "" && readNum(f.id) === null) {
-            if (errorBox) errorBox.textContent = `Ugyldigt tal i ${f.name}. Brug kun cifre og komma/punktum.`;
+        // Tjek først om nogen felter har ugyldige tegn (ikke-tomme men ikke gyldigt tal)
+        const fieldDefs = [
+            { id: "tri_a", name: "side a" },
+            { id: "tri_b", name: "side b" },
+            { id: "tri_c", name: "side c" },
+            { id: "tri_A", name: "vinkel A" },
+            { id: "tri_B", name: "vinkel B" },
+            { id: "tri_C", name: "vinkel C" }
+        ];
+
+        for (const f of fieldDefs) {
+            const el = document.getElementById(f.id);
+            if (el && el.value.trim() !== "" && readNum(f.id) === null) {
+                if (errorBox) errorBox.textContent = `Ugyldigt tal i ${f.name}. Brug kun cifre og komma/punktum.`;
+                return;
+            }
+        }
+
+        let a = readNum("tri_a"), b = readNum("tri_b"), c = readNum("tri_c");
+        let A = readNum("tri_A"), B = readNum("tri_B"), C = readNum("tri_C");
+
+        const sideEntries = [{ val: a, name: 'a' }, { val: b, name: 'b' }, { val: c, name: 'c' }];
+        const angleEntries = [{ val: A, name: 'A' }, { val: B, name: 'B' }, { val: C, name: 'C' }];
+
+        for (const { val, name } of sideEntries) {
+            if (val !== null && val <= 0) {
+                if (errorBox) errorBox.textContent = `Side ${name} skal være et positivt tal (du indtastede ${fmtTriNum(val)}).`;
+                return;
+            }
+        }
+        for (const { val, name } of angleEntries) {
+            if (val !== null && (val <= 0 || val >= 180)) {
+                if (errorBox) errorBox.textContent = `Vinkel ${name} skal ligge mellem 0° og 180° (du indtastede ${fmtTriNum(val)}°).`;
+                return;
+            }
+        }
+
+        const knownCount = [a, b, c, A, B, C].filter(x => x !== null).length;
+        if (knownCount < 3) {
+            if (errorBox) errorBox.textContent = "Indtast præcis 3 kendte værdier for at beregne trekanten.";
+            if (resultContainer) resultContainer.classList.add("hidden");
             return;
         }
-    }
-
-    let a = readNum("tri_a"), b = readNum("tri_b"), c = readNum("tri_c");
-    let A = readNum("tri_A"), B = readNum("tri_B"), C = readNum("tri_C");
-
-    const sideEntries = [{ val: a, name: 'a' }, { val: b, name: 'b' }, { val: c, name: 'c' }];
-    const angleEntries = [{ val: A, name: 'A' }, { val: B, name: 'B' }, { val: C, name: 'C' }];
-
-    for (const { val, name } of sideEntries) {
-        if (val !== null && val <= 0) {
-            if (errorBox) errorBox.textContent = `Side ${name} skal være et positivt tal (du indtastede ${fmtTriNum(val)}).`;
+        if (knownCount > 3) {
+            if (errorBox) errorBox.textContent = "Du har indtastet mere end 3 værdier. Ryd de ekstra felter først.";
             return;
         }
-    }
-    for (const { val, name } of angleEntries) {
-        if (val !== null && (val <= 0 || val >= 180)) {
-            if (errorBox) errorBox.textContent = `Vinkel ${name} skal ligge mellem 0° og 180° (du indtastede ${fmtTriNum(val)}°).`;
+        if (a === null && b === null && c === null) {
+            if (errorBox) errorBox.textContent = "Opgiv mindst én side — tre vinkler alene bestemmer ikke trekantens størrelse.";
             return;
         }
-    }
 
-    const knownCount = [a, b, c, A, B, C].filter(x => x !== null).length;
-    if (knownCount < 3) {
-        if (errorBox) errorBox.textContent = "Indtast præcis 3 kendte værdier for at beregne trekanten.";
-        if (resultContainer) resultContainer.classList.add("hidden");
-        return;
-    }
-    if (knownCount > 3) {
-        if (errorBox) errorBox.textContent = "Du har indtastet mere end 3 værdier. Ryd de ekstra felter først.";
-        return;
-    }
-    if (a === null && b === null && c === null) {
-        if (errorBox) errorBox.textContent = "Opgiv mindst én side — tre vinkler alene bestemmer ikke trekantens størrelse.";
-        return;
-    }
+        const knownAngles = [A, B, C].filter(x => x !== null);
+        if (knownAngles.length >= 2) {
+            const angSum = knownAngles.reduce((s, v) => s + v, 0);
+            if (angSum >= 180) {
+                if (errorBox) errorBox.textContent = `Vinkelsummen af de indtastede vinkler (${fmtTriNum(angSum)}°) er 180° eller derover — umulig trekant.`;
+                return;
+            }
+        }
 
-    const knownAngles = [A, B, C].filter(x => x !== null);
-    if (knownAngles.length >= 2) {
-        const angSum = knownAngles.reduce((s, v) => s + v, 0);
-        if (angSum >= 180) {
-            if (errorBox) errorBox.textContent = `Vinkelsummen af de indtastede vinkler (${fmtTriNum(angSum)}°) er 180° eller derover — umulig trekant.`;
+        const sol1 = tryCompleteTri({ a, b, c, A, B, C }, false, DEG);
+
+        if (!sol1) {
+            if (errorBox) errorBox.textContent = "Ingen gyldig trekant med disse værdier. Kontrollér at målene kan danne en trekant.";
+            if (resultContainer) resultContainer.classList.add("hidden");
             return;
         }
-    }
 
-    const sol1 = tryCompleteTri({ a, b, c, A, B, C }, false, DEG);
+        const solutions = [sol1];
+        let isAmbiguousSSA = false;
 
-    if (!sol1) {
-        if (errorBox) errorBox.textContent = "Ingen gyldig trekant med disse værdier. Kontrollér at målene kan danne en trekant.";
-        if (resultContainer) resultContainer.classList.add("hidden");
-        return;
-    }
-
-    const solutions = [sol1];
-    let isAmbiguousSSA = false;
-
-    if (isSSA(a, b, c, A, B, C)) {
-        const sol2 = tryCompleteTri({ a, b, c, A, B, C }, true, DEG);
-        if (sol2 && !isSameSolution(sol1, sol2)) {
-            solutions.push(sol2);
-            isAmbiguousSSA = true;
+        if (isSSA(a, b, c, A, B, C)) {
+            const sol2 = tryCompleteTri({ a, b, c, A, B, C }, true, DEG);
+            if (sol2 && !isSameSolution(sol1, sol2)) {
+                solutions.push(sol2);
+                isAmbiguousSSA = true;
+            }
         }
-    }
 
-    // Vis resultater og SVG-skitse i panelet med det samme
-    renderTriangleResultsInPanel(solutions, isAmbiguousSSA);
+        // Vis resultater og SVG-skitse i panelet med det samme
+        renderTriangleResultsInPanel(solutions, isAmbiguousSSA);
 
-    // Indsæt også automatisk i Word hvis vi kører i Word
-    if (window.isOfficeReady && window.Word) {
-        solutions.forEach((sol, idx) => {
-            const label = solutions.length > 1 ? `Løsning ${idx + 1}` : null;
-            window.insertTriangleToWord(sol, label);
-        });
+        // Indsæt også automatisk i Word hvis vi kører i Word og brugeren har "Indsæt automatisk" slået til
+        const autoInsertToggle = document.getElementById("autoInsertToggle");
+        const autoInsert = autoInsertToggle ? autoInsertToggle.checked : true;
+
+        if (autoInsert && window.isOfficeReady && window.Word) {
+            for (let idx = 0; idx < solutions.length; idx++) {
+                const label = solutions.length > 1 ? `Løsning ${idx + 1}` : null;
+                await window.insertTriangleToWord(solutions[idx], label);
+            }
+        }
+    } finally {
+        isSolvingTriangle = false;
     }
 };
 
@@ -423,6 +447,7 @@ window.resetTriangle = function() {
         resultContainer.innerHTML = "";
     }
     window.lastTriangleSolutions = [];
+    lastTriangleIsAmbiguousSSA = false;
 };
 
 // ==========================================
@@ -450,25 +475,25 @@ window.insertTriangleToWord = async function(data, label) {
                 Word.InsertLocation.after
             );
             content1.font.italic = true;
-            content1.font.color = "#333333";
 
             const content2 = content1.insertParagraph(
                 `Vinkler: A = ${fmtTriNum(data.A)}°  |  B = ${fmtTriNum(data.B)}°  |  C = ${fmtTriNum(data.C)}°`,
                 Word.InsertLocation.after
             );
             content2.font.italic = true;
-            content2.font.color = "#333333";
 
             const content3 = content2.insertParagraph(
                 `Areal:   T = ${fmtTriNum(data.area)}  |  Omkreds = ${fmtTriNum(data.perimeter)}`,
                 Word.InsertLocation.after
             );
             content3.font.italic = true;
-            content3.font.color = "#333333";
 
             const empty = content3.insertParagraph("", Word.InsertLocation.after);
             empty.font.bold = false;
             empty.font.italic = false;
+
+            const afterRange = empty.getRange("End");
+            afterRange.select();
 
             await window.ensureFooter(context);
             await context.sync();
@@ -478,3 +503,4 @@ window.insertTriangleToWord = async function(data, label) {
         if (errorBox) errorBox.textContent = "Kunne ikke indsætte trekantsberegning i Word: " + e.message;
     }
 };
+
